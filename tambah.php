@@ -1,424 +1,204 @@
 <?php
 
-session_start();
-
-if (!isset($_SESSION['admin_login'])) {
-    header("Location: login.php");
-    exit;
-}
-
 require_once 'koneksi.php';
+require_once 'auth.php';
 
-$error = '';
-$success = '';
+requireLogin();
+
+$errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // =====================================================
-    // AMBIL DATA FORM
-    // =====================================================
+    $kode = trim($_POST['kode_buku'] ?? '');
+    $judul = trim($_POST['judul'] ?? '');
+    $penulis = trim($_POST['penulis'] ?? '');
+    $kategori = trim($_POST['kategori'] ?? '');
+    $tahun = trim($_POST['tahun_terbit'] ?? '');
+    $penerbit = trim($_POST['penerbit'] ?? '');
+    $gambarUrl = trim($_POST['gambar_url'] ?? '');
 
-    $kode_buku    = trim($_POST['kode_buku'] ?? '');
-    $judul        = trim($_POST['judul'] ?? '');
-    $penulis      = trim($_POST['penulis'] ?? '');
-    $kategori     = trim($_POST['kategori'] ?? '');
-    $tahun_terbit = trim($_POST['tahun_terbit'] ?? '');
-    $penerbit     = trim($_POST['penerbit'] ?? '');
-    $stok         = isset($_POST['stok']) ? (int) $_POST['stok'] : 0;
+    $gambar = $gambarUrl !== '' ? $gambarUrl : null;
 
-    // =====================================================
-    // VALIDASI DATA WAJIB
-    // =====================================================
+
+    // ======================================================
+    // VALIDASI DATA
+    // ======================================================
+
+    if ($kode === '') {
+        $errors[] = 'Kode buku wajib diisi.';
+    }
+
+    if ($judul === '') {
+        $errors[] = 'Judul buku wajib diisi.';
+    }
+
+    if ($penulis === '') {
+        $errors[] = 'Penulis wajib diisi.';
+    }
+
+    if ($kategori === '') {
+        $errors[] = 'Kategori wajib diisi.';
+    }
 
     if (
-        $kode_buku === '' ||
-        $judul === '' ||
-        $penulis === '' ||
-        $kategori === '' ||
-        $tahun_terbit === '' ||
-        $penerbit === ''
+        $tahun === ''
+        || !filter_var($tahun, FILTER_VALIDATE_INT)
+        || (int)$tahun < 1000
+        || (int)$tahun > 9999
     ) {
-        $error = "Semua kolom yang bertanda * wajib diisi.";
+        $errors[] = 'Tahun terbit harus berupa tahun yang valid.';
     }
 
-    // =====================================================
-    // VALIDASI TAHUN
-    // =====================================================
-
-    $tahun_sekarang = (int) date('Y');
-
-    if (empty($error)) {
-
-        if (!ctype_digit($tahun_terbit)) {
-
-            $error = "Tahun terbit harus berupa angka.";
-
-        } elseif (
-            (int) $tahun_terbit < 1900 ||
-            (int) $tahun_terbit > ($tahun_sekarang + 1)
-        ) {
-
-            $error = "Tahun terbit tidak valid.";
-        }
+    if ($penerbit === '') {
+        $errors[] = 'Penerbit wajib diisi.';
     }
 
-    // =====================================================
-    // VALIDASI STOK
-    // =====================================================
 
-    if (empty($error) && $stok < 1) {
-        $error = "Stok buku minimal 1.";
+    // ======================================================
+    // VALIDASI URL GAMBAR
+    // ======================================================
+
+    if (
+        $gambarUrl !== ''
+        && !filter_var($gambarUrl, FILTER_VALIDATE_URL)
+    ) {
+        $errors[] = 'URL gambar tidak valid.';
     }
 
-    // =====================================================
-    // CEK KODE BUKU DUPLIKAT
-    // =====================================================
 
-    if (empty($error)) {
+    // ======================================================
+    // UPLOAD GAMBAR
+    // ======================================================
 
-        $stmtCheck = mysqli_prepare(
-            $koneksi,
-            "SELECT id FROM books WHERE kode_buku = ? LIMIT 1"
-        );
+    if (
+        isset($_FILES['gambar_file'])
+        && $_FILES['gambar_file']['error'] !== UPLOAD_ERR_NO_FILE
+    ) {
 
-        if ($stmtCheck) {
+        if ($_FILES['gambar_file']['error'] !== UPLOAD_ERR_OK) {
 
-            mysqli_stmt_bind_param(
-                $stmtCheck,
-                "s",
-                $kode_buku
-            );
-
-            mysqli_stmt_execute($stmtCheck);
-            mysqli_stmt_store_result($stmtCheck);
-
-            if (mysqli_stmt_num_rows($stmtCheck) > 0) {
-
-                $error =
-                    "Kode buku <b>" .
-                    htmlspecialchars(
-                        $kode_buku,
-                        ENT_QUOTES,
-                        'UTF-8'
-                    ) .
-                    "</b> sudah digunakan.";
-            }
-
-            mysqli_stmt_close($stmtCheck);
+            $errors[] = 'Upload gambar gagal.';
 
         } else {
 
-            $error = "Gagal memeriksa kode buku.";
-        }
-    }
+            $allowed = [
+                'image/jpeg' => 'jpg',
+                'image/png'  => 'png',
+                'image/webp' => 'webp',
+                'image/gif'  => 'gif'
+            ];
 
-    // =====================================================
-    // DEFAULT COVER
-    // =====================================================
+            $finfo = new finfo(FILEINFO_MIME_TYPE);
 
-    $cover_name = 'default_cover.jpg';
-    $uploaded_cover = false;
-
-    // =====================================================
-    // UPLOAD COVER
-    // =====================================================
-
-    if (empty($error)) {
-
-        if (
-            isset($_FILES['cover']) &&
-            $_FILES['cover']['error'] !== UPLOAD_ERR_NO_FILE
-        ) {
-
-            $file = $_FILES['cover'];
-
-            // =================================================
-            // CEK ERROR UPLOAD
-            // =================================================
-
-            if ($file['error'] !== UPLOAD_ERR_OK) {
-
-                switch ($file['error']) {
-
-                    case UPLOAD_ERR_INI_SIZE:
-                    case UPLOAD_ERR_FORM_SIZE:
-
-                        $error = "Ukuran file terlalu besar.";
-                        break;
-
-                    case UPLOAD_ERR_PARTIAL:
-
-                        $error = "File hanya ter-upload sebagian.";
-                        break;
-
-                    case UPLOAD_ERR_NO_TMP_DIR:
-
-                        $error = "Folder temporary upload tidak tersedia.";
-                        break;
-
-                    case UPLOAD_ERR_CANT_WRITE:
-
-                        $error = "File gagal ditulis ke server.";
-                        break;
-
-                    default:
-
-                        $error =
-                            "Terjadi kesalahan saat upload cover.";
-                        break;
-                }
-            }
-
-            // =================================================
-            // CEK UKURAN FILE
-            // =================================================
-
-            if (empty($error)) {
-
-                $maxSize = 2 * 1024 * 1024;
-
-                if ($file['size'] > $maxSize) {
-
-                    $error =
-                        "Ukuran cover maksimal 2 MB.";
-                }
-            }
-
-            // =================================================
-            // CEK MIME TYPE
-            // =================================================
-
-            if (empty($error)) {
-
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-
-                if (!$finfo) {
-
-                    $error =
-                        "Server tidak dapat memeriksa format file.";
-
-                } else {
-
-                    $mimeType = finfo_file(
-                        $finfo,
-                        $file['tmp_name']
-                    );
-
-                    finfo_close($finfo);
-
-                    $allowedMime = [
-                        'image/jpeg' => 'jpg',
-                        'image/png'  => 'png',
-                        'image/webp' => 'webp'
-                    ];
-
-                    if (!isset($allowedMime[$mimeType])) {
-
-                        $error =
-                            "Format cover tidak didukung. " .
-                            "Gunakan JPG, PNG, atau WEBP.";
-
-                    } else {
-
-                        $file_ext = $allowedMime[$mimeType];
-
-                        // =================================================
-                        // BUAT NAMA FILE UNIK
-                        // =================================================
-
-                        try {
-
-                            $randomName = bin2hex(
-                                random_bytes(5)
-                            );
-
-                        } catch (Exception $e) {
-
-                            $randomName =
-                                uniqid('', true);
-                        }
-
-                        $new_name =
-                            date('YmdHis') .
-                            '_' .
-                            $randomName .
-                            '.' .
-                            $file_ext;
-
-                        // =================================================
-                        // FOLDER UPLOAD
-                        // =================================================
-
-                        $upload_dir =
-                            __DIR__ . '/uploads/covers/';
-
-                        if (!is_dir($upload_dir)) {
-
-                            if (!mkdir(
-                                $upload_dir,
-                                0755,
-                                true
-                            )) {
-
-                                $error =
-                                    "Folder upload cover gagal dibuat.";
-                            }
-                        }
-
-                        // =================================================
-                        // PINDAHKAN FILE
-                        // =================================================
-
-                        if (empty($error)) {
-
-                            $destination =
-                                $upload_dir . $new_name;
-
-                            if (
-                                move_uploaded_file(
-                                    $file['tmp_name'],
-                                    $destination
-                                )
-                            ) {
-
-                                $cover_name =
-                                    $new_name;
-
-                                $uploaded_cover =
-                                    true;
-
-                            } else {
-
-                                $error =
-                                    "Cover gagal disimpan ke folder uploads.";
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // =====================================================
-    // SIMPAN KE DATABASE
-    // =====================================================
-
-    if (empty($error)) {
-
-        $sql = "
-            INSERT INTO books
-            (
-                kode_buku,
-                judul,
-                penulis,
-                kategori,
-                tahun_terbit,
-                penerbit,
-                stok,
-                cover
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ";
-
-        $stmt = mysqli_prepare(
-            $koneksi,
-            $sql
-        );
-
-        if ($stmt) {
-
-            mysqli_stmt_bind_param(
-                $stmt,
-                "ssssssis",
-                $kode_buku,
-                $judul,
-                $penulis,
-                $kategori,
-                $tahun_terbit,
-                $penerbit,
-                $stok,
-                $cover_name
+            $mime = $finfo->file(
+                $_FILES['gambar_file']['tmp_name']
             );
 
-            if (mysqli_stmt_execute($stmt)) {
 
-                mysqli_stmt_close($stmt);
+            if (!isset($allowed[$mime])) {
 
-                header(
-                    "Location: buku.php?status=success_add"
-                );
+                $errors[] =
+                    'Format gambar harus JPG, PNG, WEBP, atau GIF.';
 
-                exit;
+            } elseif (
+                $_FILES['gambar_file']['size']
+                > 2 * 1024 * 1024
+            ) {
+
+                $errors[] =
+                    'Ukuran gambar maksimal 2 MB.';
 
             } else {
 
-                // =================================================
-                // HAPUS COVER JIKA DATABASE GAGAL
-                // =================================================
+                $uploadDir =
+                    __DIR__ . '/assets/uploads/';
+
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0755, true);
+                }
+
+
+                $filename =
+                    'cover_'
+                    . bin2hex(random_bytes(8))
+                    . '.'
+                    . $allowed[$mime];
+
+                $target =
+                    $uploadDir . $filename;
+
 
                 if (
-                    $uploaded_cover &&
-                    file_exists(
-                        __DIR__ .
-                        '/uploads/covers/' .
-                        $cover_name
+                    move_uploaded_file(
+                        $_FILES['gambar_file']['tmp_name'],
+                        $target
                     )
                 ) {
 
-                    unlink(
-                        __DIR__ .
-                        '/uploads/covers/' .
-                        $cover_name
-                    );
+                    $gambar =
+                        'assets/uploads/' . $filename;
+
+                } else {
+
+                    $errors[] =
+                        'Gambar tidak dapat disimpan.';
                 }
-
-                $error =
-                    "Gagal menyimpan data buku: " .
-                    mysqli_stmt_error($stmt);
-
-                mysqli_stmt_close($stmt);
             }
-
-        } else {
-
-            $error =
-                "Gagal menyiapkan query database: " .
-                mysqli_error($koneksi);
         }
     }
-}
 
-// ==========================================================
-// TAHUN SEKARANG
-// ==========================================================
 
-$tahun_sekarang = date('Y');
+    // ======================================================
+    // SIMPAN DATABASE
+    // ======================================================
 
-// ==========================================================
-// AMBIL DAFTAR KATEGORI
-// ==========================================================
+    if (!$errors) {
 
-$list_kategori = [];
+        try {
 
-$res_kat = mysqli_query(
-    $koneksi,
-    "
-    SELECT DISTINCT kategori
-    FROM books
-    WHERE kategori IS NOT NULL
-    AND kategori != ''
-    ORDER BY kategori ASC
-    "
-);
+            $stmt = $pdo->prepare(
+                'INSERT INTO books
+                (
+                    kode_buku,
+                    judul,
+                    penulis,
+                    kategori,
+                    tahun_terbit,
+                    penerbit,
+                    gambar
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)'
+            );
 
-if ($res_kat) {
 
-    while ($row = mysqli_fetch_assoc($res_kat)) {
+            $stmt->execute([
+                $kode,
+                $judul,
+                $penulis,
+                $kategori,
+                $tahun,
+                $penerbit,
+                $gambar
+            ]);
 
-        if (!empty($row['kategori'])) {
 
-            $list_kategori[] =
-                $row['kategori'];
+            $_SESSION['flash'] = [
+                'type' => 'success',
+                'message' => 'Buku berhasil ditambahkan.'
+            ];
+
+
+            header('Location: buku.php');
+
+            exit;
+
+
+        } catch (PDOException $e) {
+
+            $errors[] =
+                $e->getCode() === '23000'
+                    ? 'Kode buku sudah digunakan. Gunakan kode lain.'
+                    : 'Data gagal disimpan.';
         }
     }
 }
@@ -437,220 +217,180 @@ if ($res_kat) {
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>
-        Tambah Buku — Admin Perpustakaan
-    </title>
+    <title>Tambah Buku - Perpus API</title>
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
 
     <style>
 
-        .content-body .tb-page-header {
+        /* =====================================================
+           TAMBAH BUKU PAGE
+        ====================================================== */
 
+        .add-book-page {
+            max-width: 1180px;
+            margin: 0 auto;
+        }
+
+
+        /* =====================================================
+           HEADER
+        ====================================================== */
+
+        .add-book-header {
             display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 22px;
+            align-items: flex-start;
+            justify-content: space-between;
 
-            animation:
-                tbFadeUp .5s ease both;
+            gap: 25px;
+
+            margin-bottom: 24px;
         }
 
-        .content-body .tb-title {
 
-            font-size: 23px;
-            font-weight: 700;
-
-            background:
-                linear-gradient(
-                    90deg,
-                    #4a0812,
-                    #8f1226,
-                    #c9184a
-                );
-
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-
+        .add-book-heading {
             display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .content-body .tb-title svg {
-
-            width: 27px;
-            height: 27px;
-
-            color: #8f1226;
-
-            -webkit-text-fill-color:
-                #8f1226;
-        }
-
-        .content-body .tb-title small {
-
-            display: block;
-
-            font-size: 12px;
-            font-weight: 500;
-
-            -webkit-text-fill-color:
-                #a29294;
-
-            letter-spacing: .5px;
-
-            margin-top: 2px;
-        }
-
-        .content-body .tb-card {
-
-            background: #fff;
-
-            border-radius: 18px;
-
-            border:
-                1px solid #f7ebeb;
-
-            box-shadow:
-                0 8px 24px
-                rgba(74, 8, 18, .08);
-
-            max-width: 820px;
-
-            overflow: hidden;
-
-            animation:
-                tbFadeUp .5s .1s ease both;
-        }
-
-        .content-body .tb-card-head {
-
-            background:
-                linear-gradient(
-                    135deg,
-                    #8f1226 0%,
-                    #5c0a14 100%
-                );
-
-            padding: 20px 28px;
-
-            display: flex;
-            align-items: center;
+            align-items: flex-start;
 
             gap: 14px;
-
-            position: relative;
-            overflow: hidden;
         }
 
-        .content-body .tb-card-head::before {
 
-            content: "";
+        .add-book-heading-icon {
+            width: 48px;
+            height: 48px;
 
-            position: absolute;
-
-            top: -45px;
-            right: -45px;
-
-            width: 150px;
-            height: 150px;
-
-            background:
-                rgba(255, 255, 255, .1);
-
-            border-radius: 50%;
-        }
-
-        .content-body .tb-card-head-icon {
-
-            width: 44px;
-            height: 44px;
-
-            border-radius: 13px;
-
-            background:
-                rgba(255, 255, 255, .16);
-
-            backdrop-filter:
-                blur(4px);
+            flex-shrink: 0;
 
             display: flex;
             align-items: center;
             justify-content: center;
 
-            box-shadow:
-                inset 0 1px 0
-                rgba(255, 255, 255, .25);
+            border-radius: 13px;
 
-            flex-shrink: 0;
+            color: #7a1729;
+
+            background: #f9e4e8;
+
+            border: 1px solid #f0cfd6;
         }
 
-        .content-body
-        .tb-card-head-icon svg {
 
-            width: 22px;
-            height: 22px;
+        .add-book-heading-icon svg {
+            width: 23px;
+            height: 23px;
 
-            color: #ffd8a8;
+            stroke-width: 1.8;
         }
 
-        .content-body .tb-card-head h2 {
 
-            font-size: 16.5px;
-            font-weight: 600;
+        .add-book-heading h1 {
+            margin: 0 0 5px;
 
-            color: #fff;
+            color: #431019;
+
+            font-size: 27px;
+
+            line-height: 1.2;
+
+            font-weight: 800;
+
+            letter-spacing: -.4px;
         }
 
-        .content-body .tb-card-head p {
 
-            font-size: 12.5px;
+        .add-book-heading p {
+            margin: 0;
 
-            color:
-                rgba(255, 255, 255, .75);
+            color: #92747b;
 
-            margin-top: 2px;
+            font-size: 13px;
+
+            line-height: 1.5;
         }
 
-        .content-body .tb-card-body {
 
-            padding: 28px;
+        /* =====================================================
+           BACK BUTTON
+        ====================================================== */
+
+        .back-button {
+            height: 40px;
+
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            gap: 7px;
+
+            padding: 0 14px;
+
+            color: #6c444c;
+
+            background: #ffffff;
+
+            border: 1px solid #eadcdf;
+
+            border-radius: 9px;
+
+            text-decoration: none;
+
+            font-size: 12px;
+
+            font-weight: 700;
+
+            transition: .2s ease;
         }
 
-        .content-body .tb-alert {
 
+        .back-button svg {
+            width: 16px;
+            height: 16px;
+        }
+
+
+        .back-button:hover {
+            color: #76182a;
+
+            background: #fff7f8;
+
+            border-color: #dfc2c8;
+
+            transform: translateX(-2px);
+        }
+
+
+        /* =====================================================
+           ERROR ALERT
+        ====================================================== */
+
+        .add-book-alert {
             display: flex;
             align-items: flex-start;
 
-            gap: 10px;
+            gap: 11px;
 
-            background: #fdecea;
+            margin-bottom: 20px;
 
-            color: #b3261e;
+            padding: 14px 16px;
 
-            border:
-                1px solid #f5c6c2;
+            color: #a03649;
 
-            border-left:
-                4px solid #d93025;
+            background: #fff1f3;
 
-            padding: 13px 15px;
+            border: 1px solid #efd3d8;
 
-            border-radius: 11px;
+            border-radius: 10px;
 
-            font-size: 13.5px;
-
-            line-height: 1.5;
-
-            margin-bottom: 22px;
-
-            animation:
-                tbAlertIn .4s ease,
-                tbShake .45s .15s ease;
+            font-size: 12px;
         }
 
-        .content-body .tb-alert svg {
 
+        .add-book-alert > svg {
             width: 18px;
             height: 18px;
 
@@ -659,648 +399,842 @@ if ($res_kat) {
             margin-top: 1px;
         }
 
-        .content-body .tb-form-grid {
 
-            display: grid;
-
-            grid-template-columns:
-                1fr 1fr;
-
-            gap: 18px;
-        }
-
-        .content-body .tb-field {
-
-            animation:
-                tbFadeUp .5s ease both;
-        }
-
-        .content-body .tb-span-2 {
-
-            grid-column:
-                span 2;
-        }
-
-        .content-body .tb-field label {
-
-            display: flex;
-            align-items: center;
-
-            gap: 6px;
-
-            font-size: 13px;
-
-            font-weight: 500;
-
-            color: #4a3f40;
-
-            margin-bottom: 8px;
-
-            letter-spacing: .3px;
-        }
-
-        .content-body
-        .tb-field
-        label .req {
-
-            color: #c9184a;
-
-            font-weight: 700;
-        }
-
-        .content-body .tb-input-wrap {
-
-            position: relative;
-        }
-
-        .content-body
-        .tb-input-wrap >
-        svg.tb-icon {
-
-            position: absolute;
-
-            left: 14px;
-            top: 50%;
-
-            transform:
-                translateY(-50%);
-
-            width: 18px;
-            height: 18px;
-
-            color: #b09a9c;
-
-            pointer-events: none;
-
-            transition:
-                color .3s;
-
-            z-index: 2;
-        }
-
-        .content-body
-        .tb-input-wrap:focus-within >
-        svg.tb-icon {
-
-            color: #8f1226;
-        }
-
-        .content-body
-        .tb-field input,
-        .content-body
-        .tb-field select {
-
-            width: 100%;
-
-            padding:
-                12px
-                14px
-                12px
-                44px;
-
-            border:
-                1.5px solid #e6dcdc;
-
-            border-radius: 12px;
-
-            font-size: 14px;
-
-            font-family: inherit;
-
-            color: #2b0509;
-
-            background: #faf7f7;
-
-            outline: none;
-
-            transition:
-                border-color .3s,
-                box-shadow .3s,
-                background .3s;
-
-            box-sizing: border-box;
-        }
-
-        .content-body
-        .tb-field input::placeholder {
-
-            color: #c2b2b4;
-        }
-
-        .content-body
-        .tb-field input:hover,
-        .content-body
-        .tb-field select:hover {
-
-            border-color: #d3bbbb;
-        }
-
-        .content-body
-        .tb-field input:focus,
-        .content-body
-        .tb-field select:focus {
-
-            border-color: #8f1226;
-
-            background: #fff;
-
-            box-shadow:
-                0 0 0 4px
-                rgba(143, 18, 38, .12);
-        }
-
-        .content-body input.tb-mono {
-
-            font-family:
-                'Consolas',
-                'Monaco',
-                monospace;
-
-            font-weight: 600;
-
-            letter-spacing: .5px;
-
-            text-transform:
-                uppercase;
-        }
-
-        .content-body .tb-cover-upload {
-
-            display: flex;
-
-            gap: 16px;
-
-            align-items: center;
-
-            background: #faf7f7;
-
-            padding: 12px;
-
-            border-radius: 12px;
-
-            border:
-                1.5px dashed #e6dcdc;
-        }
-
-        .content-body
-        .tb-cover-preview {
-
-            width: 60px;
-            height: 80px;
-
-            border-radius: 8px;
-
-            background: #e6dcdc;
-
-            object-fit: cover;
-
-            display: flex;
-
-            align-items: center;
-            justify-content: center;
-
-            color: #a29294;
-
-            font-size: 10px;
-
-            font-weight: 600;
-
-            text-align: center;
-
-            flex-shrink: 0;
-        }
-
-        .content-body .tb-cover-input {
-
+        .add-book-alert-content {
             flex: 1;
         }
 
-        .content-body
-        .tb-cover-input
-        input[type="file"] {
 
-            padding:
-                8px 10px;
+        .add-book-alert-title {
+            margin-bottom: 5px;
 
-            font-size: 12px;
+            color: #8e293c;
 
-            background: #fff;
-
-            box-sizing: border-box;
+            font-weight: 800;
         }
 
-        .content-body .tb-hint {
 
-            font-size: 11.5px;
+        .add-book-alert ul {
+            margin: 0;
 
-            color: #a29294;
+            padding-left: 17px;
+        }
 
-            margin-top: 6px;
 
+        .add-book-alert li {
+            margin: 3px 0;
+        }
+
+
+        /* =====================================================
+           FORM PANEL
+        ====================================================== */
+
+        .add-book-panel {
+            overflow: hidden;
+
+            padding: 0 !important;
+
+            background: #ffffff;
+
+            border: 1px solid #eee1e4;
+
+            border-radius: 15px;
+
+            box-shadow:
+                0 7px 25px rgba(70, 12, 24, .05);
+        }
+
+
+        /* =====================================================
+           FORM TOP
+        ====================================================== */
+
+        .form-panel-header {
             display: flex;
-
             align-items: center;
-
-            gap: 5px;
-        }
-
-        .content-body .tb-hint svg {
-
-            width: 12px;
-            height: 12px;
-
-            flex-shrink: 0;
-        }
-
-        .content-body .tb-actions {
-
-            display: flex;
 
             gap: 12px;
 
-            align-items: center;
+            padding: 18px 20px;
 
-            margin-top: 26px;
+            background:
+                linear-gradient(
+                    180deg,
+                    #fffafa,
+                    #ffffff
+                );
 
-            padding-top: 22px;
-
-            border-top:
-                1px solid #f7ebeb;
-
-            animation:
-                tbFadeUp .5s .45s ease both;
+            border-bottom: 1px solid #f0e5e7;
         }
 
-        .content-body .tb-btn {
 
-            display: inline-flex;
+        .form-panel-icon {
+            width: 38px;
+            height: 38px;
 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 10px;
+
+            color: #7a1729;
+
+            background: #f9e5e9;
+        }
+
+
+        .form-panel-icon svg {
+            width: 19px;
+            height: 19px;
+        }
+
+
+        .form-panel-title {
+            display: flex;
+            flex-direction: column;
+
+            gap: 2px;
+        }
+
+
+        .form-panel-title strong {
+            color: #4a121b;
+
+            font-size: 13px;
+
+            font-weight: 800;
+        }
+
+
+        .form-panel-title span {
+            color: #a08389;
+
+            font-size: 11px;
+        }
+
+
+        /* =====================================================
+           FORM CONTENT
+        ====================================================== */
+
+        .add-book-form {
+            padding: 22px;
+        }
+
+
+        /* =====================================================
+           SECTION
+        ====================================================== */
+
+        .form-section {
+            margin-bottom: 25px;
+        }
+
+
+        .form-section:last-of-type {
+            margin-bottom: 0;
+        }
+
+
+        .form-section-heading {
+            display: flex;
             align-items: center;
 
             gap: 9px;
 
-            padding:
-                12px 24px;
+            margin-bottom: 16px;
+        }
 
-            border-radius: 12px;
 
-            font-size: 14px;
+        .form-section-heading-icon {
+            width: 31px;
+            height: 31px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 8px;
+
+            color: #7a1729;
+
+            background: #fae8eb;
+        }
+
+
+        .form-section-heading-icon svg {
+            width: 16px;
+            height: 16px;
+        }
+
+
+        .form-section-heading-text {
+            display: flex;
+            flex-direction: column;
+
+            gap: 2px;
+        }
+
+
+        .form-section-heading-text strong {
+            color: #4a121b;
+
+            font-size: 13px;
+
+            font-weight: 800;
+        }
+
+
+        .form-section-heading-text span {
+            color: #a4878e;
+
+            font-size: 10px;
+        }
+
+
+        /* =====================================================
+           FORM GRID
+        ====================================================== */
+
+        .book-form-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+
+            gap: 16px;
+        }
+
+
+        .form-group {
+            display: flex;
+
+            flex-direction: column;
+
+            gap: 7px;
+        }
+
+
+        .form-group.full {
+            grid-column: 1 / -1;
+        }
+
+
+        .form-label {
+            display: flex;
+            align-items: center;
+
+            gap: 3px;
+
+            color: #5c2831;
+
+            font-size: 11px;
+
+            font-weight: 800;
+        }
+
+
+        .required {
+            color: #b5364c;
+        }
+
+
+        .form-input {
+            width: 100%;
+
+            height: 43px;
+
+            box-sizing: border-box;
+
+            padding: 0 13px;
+
+            color: #4a151e;
+
+            background: #ffffff;
+
+            border: 1px solid #eadcdf;
+
+            border-radius: 9px;
+
+            outline: none;
+
+            font-family: inherit;
+
+            font-size: 12px;
+
+            transition: .2s ease;
+        }
+
+
+        .form-input::placeholder {
+            color: #b9a4a9;
+        }
+
+
+        .form-input:hover {
+            border-color: #dcc6cb;
+        }
+
+
+        .form-input:focus {
+            border-color: #9a3447;
+
+            box-shadow:
+                0 0 0 3px rgba(154, 52, 71, .08);
+        }
+
+
+        .form-help {
+            margin: -2px 0 3px;
+
+            color: #a4878e;
+
+            font-size: 10px;
+
+            line-height: 1.5;
+        }
+
+
+        /* =====================================================
+           IMAGE SECTION
+        ====================================================== */
+
+        .image-section {
+            display: grid;
+
+            grid-template-columns:
+                minmax(0, 1fr)
+                210px;
+
+            gap: 24px;
+
+            align-items: start;
+        }
+
+
+        /* =====================================================
+           IMAGE TABS
+        ====================================================== */
+
+        .source-tabs {
+            display: flex;
+
+            gap: 5px;
+
+            padding: 4px;
+
+            margin-bottom: 13px;
+
+            background: #f8f1f2;
+
+            border: 1px solid #eee0e3;
+
+            border-radius: 10px;
+        }
+
+
+        .source-tab {
+            flex: 1;
+
+            height: 38px;
+
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            gap: 7px;
+
+            padding: 0 12px;
+
+            color: #896a72;
+
+            background: transparent;
+
+            border: 0;
+
+            border-radius: 7px;
+
+            font-family: inherit;
+
+            font-size: 11px;
+
+            font-weight: 700;
+
+            cursor: pointer;
+
+            transition: .2s ease;
+        }
+
+
+        .source-tab svg {
+            width: 15px;
+            height: 15px;
+        }
+
+
+        .source-tab:hover {
+            color: #721729;
+        }
+
+
+        .source-tab.active {
+            color: #711627;
+
+            background: #ffffff;
+
+            box-shadow:
+                0 2px 7px rgba(70, 12, 24, .08);
+        }
+
+
+        /* =====================================================
+           SOURCE BOX
+        ====================================================== */
+
+        .source-box {
+            display: none;
+
+            padding: 15px;
+
+            background: #fffafa;
+
+            border: 1px solid #eee1e4;
+
+            border-radius: 10px;
+        }
+
+
+        .source-box.active {
+            display: block;
+        }
+
+
+        .source-box input[type="file"] {
+            width: 100%;
+
+            box-sizing: border-box;
+
+            padding: 10px;
+
+            color: #74515a;
+
+            background: #ffffff;
+
+            border: 1px dashed #d9bec4;
+
+            border-radius: 8px;
+
+            font-family: inherit;
+
+            font-size: 11px;
+
+            cursor: pointer;
+        }
+
+
+        .source-box input[type="file"]::file-selector-button {
+            margin-right: 10px;
+
+            padding: 7px 10px;
+
+            color: #7a1729;
+
+            background: #fae8eb;
+
+            border: 1px solid #efd2d8;
+
+            border-radius: 6px;
+
+            font-family: inherit;
+
+            font-size: 10px;
+
+            font-weight: 700;
+
+            cursor: pointer;
+        }
+
+
+        .source-box input[type="url"] {
+            width: 100%;
+
+            height: 42px;
+
+            box-sizing: border-box;
+
+            padding: 0 12px;
+
+            color: #4a151e;
+
+            background: #ffffff;
+
+            border: 1px solid #eadcdf;
+
+            border-radius: 8px;
+
+            outline: none;
+
+            font-family: inherit;
+
+            font-size: 11px;
+        }
+
+
+        .source-box input[type="url"]:focus {
+            border-color: #9a3447;
+
+            box-shadow:
+                0 0 0 3px rgba(154, 52, 71, .08);
+        }
+
+
+        .source-box small {
+            display: block;
+
+            margin-top: 8px;
+
+            color: #a4878e;
+
+            font-size: 10px;
+
+            line-height: 1.5;
+        }
+
+
+        /* =====================================================
+           PREVIEW
+        ====================================================== */
+
+        .preview-box {
+            padding: 14px;
+
+            background: #fffafa;
+
+            border: 1px solid #eee1e4;
+
+            border-radius: 11px;
+        }
+
+
+        .preview-title {
+            display: flex;
+            align-items: center;
+
+            gap: 7px;
+
+            margin-bottom: 11px;
+
+            color: #5c2831;
+
+            font-size: 11px;
+
+            font-weight: 800;
+        }
+
+
+        .preview-title svg {
+            width: 15px;
+            height: 15px;
+
+            color: #7a1729;
+        }
+
+
+        .cover-preview {
+            width: 100%;
+
+            aspect-ratio: 3 / 4;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            overflow: hidden;
+
+            color: #8c394a;
+
+            background:
+                linear-gradient(
+                    145deg,
+                    #f9e3e7,
+                    #f1ccd3
+                );
+
+            border: 1px solid #e7cbd0;
+
+            border-radius: 9px;
+
+            box-shadow:
+                0 6px 15px rgba(70, 12, 24, .07);
+        }
+
+
+        .cover-preview img {
+            width: 100%;
+            height: 100%;
+
+            display: block;
+
+            object-fit: cover;
+        }
+
+
+        .cover-preview.placeholder {
+            flex-direction: column;
+
+            gap: 8px;
+        }
+
+
+        .cover-preview.placeholder svg {
+            width: 27px;
+            height: 27px;
+
+            stroke-width: 1.5;
+        }
+
+
+        .preview-placeholder-text {
+            color: #9b747c;
+
+            font-size: 9px;
 
             font-weight: 600;
 
+            text-align: center;
+        }
+
+
+        /* =====================================================
+           DIVIDER
+        ====================================================== */
+
+        .form-divider {
+            height: 1px;
+
+            margin: 24px 0;
+
+            background: #f0e5e7;
+
+            border: 0;
+        }
+
+
+        /* =====================================================
+           FORM FOOTER
+        ====================================================== */
+
+        .form-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+
+            gap: 9px;
+
+            padding-top: 20px;
+
+            margin-top: 22px;
+
+            border-top: 1px solid #f0e5e7;
+        }
+
+
+        .form-button {
+            height: 41px;
+
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            gap: 7px;
+
+            padding: 0 15px;
+
+            border-radius: 9px;
+
             font-family: inherit;
+
+            font-size: 11px;
+
+            font-weight: 800;
 
             text-decoration: none;
 
             cursor: pointer;
 
-            border: none;
-
-            transition:
-                transform .25s,
-                box-shadow .25s,
-                background .25s,
-                color .25s;
-
-            position: relative;
-
-            overflow: hidden;
+            transition: .2s ease;
         }
 
-        .content-body .tb-btn svg {
 
-            width: 17px;
-            height: 17px;
-
-            transition:
-                transform .3s;
+        .form-button svg {
+            width: 16px;
+            height: 16px;
         }
 
-        .content-body .tb-btn-save {
+
+        .form-button.cancel {
+            color: #6c444c;
+
+            background: #ffffff;
+
+            border: 1px solid #eadcdf;
+        }
+
+
+        .form-button.cancel:hover {
+            color: #76182a;
+
+            background: #fff7f8;
+
+            border-color: #dfc2c8;
+        }
+
+
+        .form-button.submit {
+            color: #ffffff;
 
             background:
                 linear-gradient(
                     135deg,
-                    #c9184a,
-                    #8f1226 60%,
-                    #5c0a14
+                    #661321,
+                    #8f1d32
                 );
 
-            color: #fff;
+            border: 1px solid #661321;
 
             box-shadow:
-                0 8px 18px
-                rgba(143, 18, 38, .35);
+                0 6px 15px rgba(102, 19, 33, .18);
         }
 
-        .content-body
-        .tb-btn-save:hover {
 
-            transform:
-                translateY(-2px);
+        .form-button.submit:hover {
+            transform: translateY(-1px);
 
             box-shadow:
-                0 12px 26px
-                rgba(143, 18, 38, .45);
+                0 8px 19px rgba(102, 19, 33, .25);
         }
 
-        .content-body
-        .tb-btn-save:hover svg {
 
-            transform:
-                translateX(3px);
+        /* =====================================================
+           RESPONSIVE
+        ====================================================== */
+
+        @media (max-width: 900px) {
+
+            .image-section {
+                grid-template-columns: 1fr;
+            }
+
+
+            .preview-box {
+                max-width: 220px;
+            }
+
         }
 
-        .content-body
-        .tb-btn-save:active {
 
-            transform:
-                translateY(0)
-                scale(.98);
-        }
+        @media (max-width: 700px) {
 
-        .content-body
-        .tb-btn-save:disabled {
-
-            opacity: .75;
-
-            cursor:
-                not-allowed;
-
-            transform: none;
-        }
-
-        .content-body .tb-btn-batal {
-
-            background: #fff;
-
-            color: #8f1226;
-
-            border:
-                1.5px solid #e6dcdc;
-        }
-
-        .content-body
-        .tb-btn-batal:hover {
-
-            background: #fdf3f3;
-
-            border-color:
-                #c9184a;
-
-            transform:
-                translateY(-2px);
-        }
-
-        .content-body .tb-spinner {
-
-            width: 16px;
-            height: 16px;
-
-            border:
-                2px solid
-                rgba(255, 255, 255, .4);
-
-            border-top-color: #fff;
-
-            border-radius: 50%;
-
-            display: inline-block;
-
-            animation:
-                tbSpin .7s linear infinite;
-        }
-
-        @keyframes tbSpin {
-
-            to {
-                transform:
-                    rotate(360deg);
-            }
-        }
-
-        @keyframes tbAlertIn {
-
-            from {
-
-                opacity: 0;
-
-                transform:
-                    translateY(-8px);
+            .add-book-header {
+                flex-direction: column;
             }
 
-            to {
 
-                opacity: 1;
-
-                transform: none;
-            }
-        }
-
-        @keyframes tbShake {
-
-            0%,
-            100% {
-                transform:
-                    translateX(0);
-            }
-
-            20% {
-                transform:
-                    translateX(-6px);
-            }
-
-            40% {
-                transform:
-                    translateX(6px);
-            }
-
-            60% {
-                transform:
-                    translateX(-4px);
-            }
-
-            80% {
-                transform:
-                    translateX(4px);
-            }
-        }
-
-        @keyframes tbFadeUp {
-
-            from {
-
-                opacity: 0;
-
-                transform:
-                    translateY(16px);
-            }
-
-            to {
-
-                opacity: 1;
-
-                transform: none;
-            }
-        }
-
-        @media (max-width: 640px) {
-
-            .content-body
-            .tb-form-grid {
-
-                grid-template-columns:
-                    1fr;
-            }
-
-            .content-body
-            .tb-span-2 {
-
-                grid-column:
-                    span 1;
-            }
-
-            .content-body
-            .tb-card-body {
-
-                padding: 20px;
-            }
-
-            .content-body
-            .tb-actions {
-
-                flex-direction:
-                    column-reverse;
-            }
-
-            .content-body
-            .tb-btn {
-
+            .add-book-header .back-button {
                 width: 100%;
-
-                justify-content:
-                    center;
             }
 
-            .content-body
-            .tb-title {
 
-                font-size: 19px;
+            .book-form-grid {
+                grid-template-columns: 1fr;
             }
 
-            .content-body
-            .tb-cover-upload {
 
-                align-items:
-                    flex-start;
+            .form-group.full {
+                grid-column: auto;
             }
+
+
+            .add-book-form {
+                padding: 17px;
+            }
+
+        }
+
+
+        @media (max-width: 480px) {
+
+            .add-book-heading h1 {
+                font-size: 23px;
+            }
+
+
+            .add-book-heading-icon {
+                width: 43px;
+                height: 43px;
+            }
+
+
+            .source-tabs {
+                flex-direction: column;
+            }
+
+
+            .form-actions {
+                flex-direction: column-reverse;
+            }
+
+
+            .form-button {
+                width: 100%;
+            }
+
         }
 
     </style>
 
 </head>
 
+
 <body>
 
-<div class="app-layout">
+
+<div class="app">
 
     <?php include 'sidebar.php'; ?>
 
-    <div class="main-content">
 
-        <?php include 'topbar.php'; ?>
+    <main class="main-content">
 
-        <div class="content-body">
-
-            <!-- HEADER -->
-
-            <div class="tb-page-header">
-
-                <h2 class="tb-title">
-
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-
-                        <circle
-                            cx="12"
-                            cy="12"
-                            r="10"
-                        />
-
-                        <line
-                            x1="12"
-                            y1="8"
-                            x2="12"
-                            y2="16"
-                        />
-
-                        <line
-                            x1="8"
-                            y1="12"
-                            x2="16"
-                            y2="12"
-                        />
-
-                    </svg>
-
-                    <span>
-
-                        Tambah Data Buku
-
-                        <small>
-                            Lengkapi formulir untuk mendaftarkan buku baru
-                        </small>
-
-                    </span>
-
-                </h2>
-
-            </div>
+        <div class="add-book-page">
 
 
-            <!-- CARD -->
+            <!-- =================================================
+                 HEADER
+            ================================================== -->
 
-            <div class="tb-card">
+            <div class="add-book-header">
 
-                <div class="tb-card-head">
+                <div class="add-book-heading">
 
-                    <div class="tb-card-head-icon">
+                    <div class="add-book-heading-icon">
 
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        >
-
-                            <path
-                                d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"
-                            />
-
-                            <path
-                                d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"
-                            />
-
-                        </svg>
+                        <i data-lucide="book-plus"></i>
 
                     </div>
 
+
                     <div>
 
-                        <h2>
-                            Formulir Buku Baru
-                        </h2>
+                        <h1>
+                            Tambah Buku
+                        </h1>
 
                         <p>
-                            Semua kolom bertanda <b>*</b> wajib diisi
+                            Tambahkan koleksi buku baru ke dalam
+                            sistem perpustakaan.
                         </p>
 
                     </div>
@@ -1308,846 +1242,842 @@ if ($res_kat) {
                 </div>
 
 
-                <div class="tb-card-body">
+                <a
+                    href="buku.php"
+                    class="back-button"
+                >
 
-                    <?php if ($error): ?>
+                    <i data-lucide="arrow-left"></i>
 
-                        <div class="tb-alert">
+                    Kembali ke Data Buku
 
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
+                </a>
 
-                                <path
-                                    d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
-                                />
+            </div>
 
-                                <line
-                                    x1="12"
-                                    y1="9"
-                                    x2="12"
-                                    y2="13"
-                                />
 
-                                <line
-                                    x1="12"
-                                    y1="17"
-                                    x2="12.01"
-                                    y2="17"
-                                />
+            <!-- =================================================
+                 ERROR
+            ================================================== -->
 
-                            </svg>
+            <?php if ($errors): ?>
 
-                            <span>
-                                <?= $error; ?>
-                            </span>
+                <div class="add-book-alert">
 
+                    <i data-lucide="circle-alert"></i>
+
+
+                    <div class="add-book-alert-content">
+
+                        <div class="add-book-alert-title">
+                            Data belum dapat disimpan
                         </div>
 
-                    <?php endif; ?>
+
+                        <ul>
+
+                            <?php foreach ($errors as $error): ?>
+
+                                <li>
+                                    <?= e($error) ?>
+                                </li>
+
+                            <?php endforeach; ?>
+
+                        </ul>
+
+                    </div>
+
+                </div>
+
+            <?php endif; ?>
 
 
-                    <form
-                        action=""
-                        method="POST"
-                        enctype="multipart/form-data"
-                        id="tbForm"
-                    >
+            <!-- =================================================
+                 FORM PANEL
+            ================================================== -->
 
-                        <div class="tb-form-grid">
+            <section class="panel add-book-panel">
 
 
-                            <!-- KODE -->
+                <!-- PANEL HEADER -->
 
-                            <div class="tb-field">
+                <div class="form-panel-header">
 
-                                <label>
+                    <div class="form-panel-icon">
 
-                                    Kode Buku
+                        <i data-lucide="file-pen-line"></i>
 
-                                    <span class="req">
-                                        *
-                                    </span>
+                    </div>
 
-                                </label>
 
-                                <div class="tb-input-wrap">
+                    <div class="form-panel-title">
 
-                                    <svg
-                                        class="tb-icon"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
+                        <strong>
+                            Informasi Buku
+                        </strong>
 
-                                        <rect
-                                            x="3"
-                                            y="4"
-                                            width="18"
-                                            height="16"
-                                            rx="2"
-                                        />
+                        <span>
+                            Lengkapi informasi utama buku yang akan ditambahkan.
+                        </span>
 
-                                        <line
-                                            x1="7"
-                                            y1="9"
-                                            x2="17"
-                                            y2="9"
-                                        />
+                    </div>
 
-                                        <line
-                                            x1="7"
-                                            y1="13"
-                                            x2="12"
-                                            y2="13"
-                                        />
+                </div>
 
-                                    </svg>
 
-                                    <input
-                                        type="text"
-                                        name="kode_buku"
-                                        class="tb-mono"
-                                        required
-                                        placeholder="BK001"
-                                        maxlength="20"
-                                        autocomplete="off"
-                                        value="<?= htmlspecialchars(
-                                            $_POST['kode_buku'] ?? '',
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
-                                    >
+                <!-- FORM -->
 
-                                </div>
+                <form
+                    method="post"
+                    enctype="multipart/form-data"
+                    id="bookForm"
+                    class="add-book-form"
+                >
 
-                                <div class="tb-hint">
-                                    Kode unik buku
-                                </div>
+
+                    <!-- =================================================
+                         INFORMASI BUKU
+                    ================================================== -->
+
+                    <div class="form-section">
+
+                        <div class="form-section-heading">
+
+                            <div class="form-section-heading-icon">
+
+                                <i data-lucide="book-open"></i>
 
                             </div>
 
 
-                            <!-- STOK -->
+                            <div class="form-section-heading-text">
 
-                            <div class="tb-field">
+                                <strong>
+                                    Detail Buku
+                                </strong>
 
-                                <label>
+                                <span>
+                                    Masukkan informasi dasar buku.
+                                </span>
 
-                                    Jumlah Stok
+                            </div>
 
-                                    <span class="req">
-                                        *
-                                    </span>
+                        </div>
 
+
+                        <div class="book-form-grid">
+
+
+                            <!-- KODE -->
+
+                            <div class="form-group">
+
+                                <label
+                                    class="form-label"
+                                    for="kode_buku"
+                                >
+                                    Kode Buku
+                                    <span class="required">*</span>
                                 </label>
 
-                                <div class="tb-input-wrap">
 
-                                    <svg
-                                        class="tb-icon"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-
-                                        <path
-                                            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
-                                        />
-
-                                    </svg>
-
-                                    <input
-                                        type="number"
-                                        name="stok"
-                                        min="1"
-                                        required
-                                        placeholder="1"
-                                        value="<?= htmlspecialchars(
-                                            $_POST['stok'] ?? '1',
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
-                                    >
-
-                                </div>
+                                <input
+                                    class="form-input"
+                                    id="kode_buku"
+                                    type="text"
+                                    name="kode_buku"
+                                    maxlength="20"
+                                    required
+                                    value="<?= e($_POST['kode_buku'] ?? '') ?>"
+                                    placeholder="Contoh: BK011"
+                                >
 
                             </div>
 
 
                             <!-- JUDUL -->
 
-                            <div class="tb-field tb-span-2">
+                            <div class="form-group">
 
-                                <label>
-
+                                <label
+                                    class="form-label"
+                                    for="judul"
+                                >
                                     Judul Buku
-
-                                    <span class="req">
-                                        *
-                                    </span>
-
+                                    <span class="required">*</span>
                                 </label>
 
-                                <div class="tb-input-wrap">
 
-                                    <svg
-                                        class="tb-icon"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-
-                                        <path
-                                            d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"
-                                        />
-
-                                        <path
-                                            d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"
-                                        />
-
-                                    </svg>
-
-                                    <input
-                                        type="text"
-                                        name="judul"
-                                        required
-                                        placeholder="Judul lengkap buku"
-                                        maxlength="200"
-                                        autocomplete="off"
-                                        value="<?= htmlspecialchars(
-                                            $_POST['judul'] ?? '',
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
-                                    >
-
-                                </div>
+                                <input
+                                    class="form-input"
+                                    id="judul"
+                                    type="text"
+                                    name="judul"
+                                    maxlength="150"
+                                    required
+                                    value="<?= e($_POST['judul'] ?? '') ?>"
+                                    placeholder="Masukkan judul buku"
+                                >
 
                             </div>
 
 
                             <!-- PENULIS -->
 
-                            <div class="tb-field">
+                            <div class="form-group">
 
-                                <label>
-
+                                <label
+                                    class="form-label"
+                                    for="penulis"
+                                >
                                     Penulis
-
-                                    <span class="req">
-                                        *
-                                    </span>
-
+                                    <span class="required">*</span>
                                 </label>
 
-                                <div class="tb-input-wrap">
 
-                                    <svg
-                                        class="tb-icon"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-
-                                        <path
-                                            d="M12 20h9"
-                                        />
-
-                                        <path
-                                            d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"
-                                        />
-
-                                    </svg>
-
-                                    <input
-                                        type="text"
-                                        name="penulis"
-                                        required
-                                        placeholder="Nama penulis"
-                                        maxlength="100"
-                                        autocomplete="off"
-                                        value="<?= htmlspecialchars(
-                                            $_POST['penulis'] ?? '',
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
-                                    >
-
-                                </div>
+                                <input
+                                    class="form-input"
+                                    id="penulis"
+                                    type="text"
+                                    name="penulis"
+                                    maxlength="100"
+                                    required
+                                    value="<?= e($_POST['penulis'] ?? '') ?>"
+                                    placeholder="Nama penulis"
+                                >
 
                             </div>
 
 
                             <!-- KATEGORI -->
 
-                            <div class="tb-field">
+                            <div class="form-group">
 
-                                <label>
-
+                                <label
+                                    class="form-label"
+                                    for="kategori"
+                                >
                                     Kategori
-
-                                    <span class="req">
-                                        *
-                                    </span>
-
+                                    <span class="required">*</span>
                                 </label>
 
-                                <div class="tb-input-wrap">
 
-                                    <svg
-                                        class="tb-icon"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-
-                                        <path
-                                            d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"
-                                        />
-
-                                        <line
-                                            x1="7"
-                                            y1="7"
-                                            x2="7.01"
-                                            y2="7"
-                                        />
-
-                                    </svg>
-
-                                    <input
-                                        type="text"
-                                        name="kategori"
-                                        list="kategori_list"
-                                        required
-                                        placeholder="Pilih atau ketik kategori"
-                                        maxlength="50"
-                                        autocomplete="off"
-                                        value="<?= htmlspecialchars(
-                                            $_POST['kategori'] ?? '',
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
-                                    >
-
-                                    <datalist id="kategori_list">
-
-                                        <?php foreach (
-                                            $list_kategori
-                                            as $kat
-                                        ): ?>
-
-                                            <option
-                                                value="<?= htmlspecialchars(
-                                                    $kat,
-                                                    ENT_QUOTES,
-                                                    'UTF-8'
-                                                ) ?>"
-                                            ></option>
-
-                                        <?php endforeach; ?>
-
-                                    </datalist>
-
-                                </div>
+                                <input
+                                    class="form-input"
+                                    id="kategori"
+                                    type="text"
+                                    name="kategori"
+                                    maxlength="50"
+                                    required
+                                    value="<?= e($_POST['kategori'] ?? '') ?>"
+                                    placeholder="Novel / Teknologi / Pendidikan"
+                                >
 
                             </div>
 
 
                             <!-- TAHUN -->
 
-                            <div class="tb-field">
+                            <div class="form-group">
 
-                                <label>
-
+                                <label
+                                    class="form-label"
+                                    for="tahun_terbit"
+                                >
                                     Tahun Terbit
-
-                                    <span class="req">
-                                        *
-                                    </span>
-
+                                    <span class="required">*</span>
                                 </label>
 
-                                <div class="tb-input-wrap">
 
-                                    <svg
-                                        class="tb-icon"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                    >
-
-                                        <rect
-                                            x="3"
-                                            y="4"
-                                            width="18"
-                                            height="18"
-                                            rx="2"
-                                        />
-
-                                        <line
-                                            x1="16"
-                                            y1="2"
-                                            x2="16"
-                                            y2="6"
-                                        />
-
-                                        <line
-                                            x1="8"
-                                            y1="2"
-                                            x2="8"
-                                            y2="6"
-                                        />
-
-                                        <line
-                                            x1="3"
-                                            y1="10"
-                                            x2="21"
-                                            y2="10"
-                                        />
-
-                                    </svg>
-
-                                    <input
-                                        type="number"
-                                        name="tahun_terbit"
-                                        required
-                                        placeholder="<?= $tahun_sekarang ?>"
-                                        min="1900"
-                                        max="<?= $tahun_sekarang + 1 ?>"
-                                        autocomplete="off"
-                                        value="<?= htmlspecialchars(
-                                            $_POST['tahun_terbit'] ?? '',
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
-                                    >
-
-                                </div>
+                                <input
+                                    class="form-input"
+                                    id="tahun_terbit"
+                                    type="number"
+                                    name="tahun_terbit"
+                                    min="1000"
+                                    max="9999"
+                                    required
+                                    value="<?= e($_POST['tahun_terbit'] ?? '') ?>"
+                                    placeholder="2026"
+                                >
 
                             </div>
 
 
                             <!-- PENERBIT -->
 
-                            <div class="tb-field">
+                            <div class="form-group">
 
-                                <label>
-
+                                <label
+                                    class="form-label"
+                                    for="penerbit"
+                                >
                                     Penerbit
-
-                                    <span class="req">
-                                        *
-                                    </span>
-
+                                    <span class="required">*</span>
                                 </label>
 
-                                <div class="tb-input-wrap">
 
-                                    <svg
-                                        class="tb-icon"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
+                                <input
+                                    class="form-input"
+                                    id="penerbit"
+                                    type="text"
+                                    name="penerbit"
+                                    maxlength="100"
+                                    required
+                                    value="<?= e($_POST['penerbit'] ?? '') ?>"
+                                    placeholder="Nama penerbit"
+                                >
+
+                            </div>
+
+
+                        </div>
+
+                    </div>
+
+
+                    <hr class="form-divider">
+
+
+                    <!-- =================================================
+                         GAMBAR
+                    ================================================== -->
+
+                    <div class="form-section">
+
+
+                        <div class="form-section-heading">
+
+                            <div class="form-section-heading-icon">
+
+                                <i data-lucide="image"></i>
+
+                            </div>
+
+
+                            <div class="form-section-heading-text">
+
+                                <strong>
+                                    Sampul Buku
+                                </strong>
+
+                                <span>
+                                    Upload dari komputer atau gunakan URL gambar.
+                                </span>
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="image-section">
+
+
+                            <!-- SOURCE -->
+
+                            <div>
+
+                                <div class="source-tabs">
+
+
+                                    <button
+                                        type="button"
+                                        class="source-tab active"
+                                        data-source="file"
                                     >
 
-                                        <path
-                                            d="M3 21h18"
-                                        />
+                                        <i data-lucide="upload"></i>
 
-                                        <path
-                                            d="M5 21V7l7-4 7 4v14"
-                                        />
+                                        Upload dari Komputer
 
-                                        <path
-                                            d="M9 21v-6h6v6"
-                                        />
+                                    </button>
 
-                                    </svg>
+
+                                    <button
+                                        type="button"
+                                        class="source-tab"
+                                        data-source="url"
+                                    >
+
+                                        <i data-lucide="link"></i>
+
+                                        Gunakan URL
+
+                                    </button>
+
+
+                                </div>
+
+
+                                <!-- FILE -->
+
+                                <div
+                                    id="fileSource"
+                                    class="source-box active"
+                                >
 
                                     <input
-                                        type="text"
-                                        name="penerbit"
-                                        required
-                                        placeholder="Nama penerbit"
-                                        maxlength="100"
-                                        autocomplete="off"
-                                        value="<?= htmlspecialchars(
-                                            $_POST['penerbit'] ?? '',
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>"
+                                        type="file"
+                                        id="gambar_file"
+                                        name="gambar_file"
+                                        accept="image/jpeg,image/png,image/webp,image/gif"
                                     >
+
+
+                                    <small>
+                                        Format yang didukung:
+                                        JPG, PNG, WEBP, GIF.
+                                        Maksimal 2 MB.
+                                    </small>
+
+                                </div>
+
+
+                                <!-- URL -->
+
+                                <div
+                                    id="urlSource"
+                                    class="source-box"
+                                >
+
+                                    <input
+                                        type="url"
+                                        id="gambar_url"
+                                        name="gambar_url"
+                                        value="<?= e($_POST['gambar_url'] ?? '') ?>"
+                                        placeholder="https://contoh.com/sampul.jpg"
+                                    >
+
+
+                                    <small>
+                                        Masukkan URL langsung yang mengarah
+                                        ke file gambar sampul.
+                                    </small>
 
                                 </div>
 
                             </div>
 
 
-                            <!-- COVER -->
+                            <!-- PREVIEW -->
 
-                            <div class="tb-field tb-span-2">
+                            <div class="preview-box">
 
-                                <label>
 
-                                    Sampul Buku
+                                <div class="preview-title">
 
-                                    <span
-                                        style="
-                                            font-size:11px;
-                                            color:#a29294;
-                                            font-weight:400;
-                                        "
-                                    >
-                                        (Opsional)
+                                    <i data-lucide="eye"></i>
+
+                                    Preview Sampul
+
+                                </div>
+
+
+                                <div
+                                    id="imagePreview"
+                                    class="cover-preview placeholder"
+                                >
+
+                                    <i data-lucide="image"></i>
+
+                                    <span class="preview-placeholder-text">
+                                        Belum ada gambar
                                     </span>
 
-                                </label>
-
-                                <div class="tb-cover-upload">
-
-                                    <img
-                                        id="imgPreview"
-                                        class="tb-cover-preview"
-                                        src=""
-                                        alt="Preview"
-                                        style="display:none;"
-                                    >
-
-                                    <div
-                                        id="previewPlaceholder"
-                                        class="tb-cover-preview"
-                                    >
-                                        No Cover
-                                    </div>
-
-                                    <div class="tb-cover-input">
-
-                                        <input
-                                            type="file"
-                                            name="cover"
-                                            id="coverInput"
-                                            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-                                        >
-
-                                        <div class="tb-hint">
-
-                                            PNG, JPG, atau WEBP.
-                                            Maksimal 2MB.
-
-                                        </div>
-
-                                    </div>
-
                                 </div>
+
 
                             </div>
 
-                        </div>
-
-
-                        <!-- ACTION -->
-
-                        <div class="tb-actions">
-
-                            <button
-                                type="submit"
-                                id="tbBtnSave"
-                                class="tb-btn tb-btn-save"
-                            >
-
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-
-                                    <path
-                                        d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"
-                                    />
-
-                                    <polyline
-                                        points="17 21 17 13 7 13 7 21"
-                                    />
-
-                                    <polyline
-                                        points="7 3 7 8 15 8"
-                                    />
-
-                                </svg>
-
-                                Simpan Buku
-
-                            </button>
-
-
-                            <a
-                                href="buku.php"
-                                class="tb-btn tb-btn-batal"
-                            >
-
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-
-                                    <line
-                                        x1="18"
-                                        y1="6"
-                                        x2="6"
-                                        y2="18"
-                                    />
-
-                                    <line
-                                        x1="6"
-                                        y1="6"
-                                        x2="18"
-                                        y2="18"
-                                    />
-
-                                </svg>
-
-                                Batal
-
-                            </a>
 
                         </div>
 
-                    </form>
+                    </div>
 
-                </div>
 
-            </div>
+                    <!-- =================================================
+                         ACTION
+                    ================================================== -->
+
+                    <div class="form-actions">
+
+
+                        <a
+                            href="buku.php"
+                            class="form-button cancel"
+                        >
+
+                            <i data-lucide="x"></i>
+
+                            Batal
+
+                        </a>
+
+
+                        <button
+                            type="submit"
+                            class="form-button submit"
+                        >
+
+                            <i data-lucide="save"></i>
+
+                            Simpan Buku
+
+                        </button>
+
+
+                    </div>
+
+
+                </form>
+
+            </section>
 
         </div>
 
-    </div>
+    </main>
 
 </div>
 
 
+<!-- =========================================================
+     LUCIDE ICON
+========================================================== -->
+
+<script src="https://unpkg.com/lucide@latest"></script>
+
+
 <script>
 
-// =====================================================
-// PREVIEW COVER
-// =====================================================
+const tabs =
+    document.querySelectorAll('.source-tab');
 
-const coverInput =
-    document.getElementById('coverInput');
+const fileSource =
+    document.getElementById('fileSource');
+
+const urlSource =
+    document.getElementById('urlSource');
+
+const fileInput =
+    document.getElementById('gambar_file');
+
+const urlInput =
+    document.getElementById('gambar_url');
 
 const preview =
-    document.getElementById('imgPreview');
-
-const placeholder =
-    document.getElementById('previewPlaceholder');
+    document.getElementById('imagePreview');
 
 
-coverInput.addEventListener(
+// ======================================================
+// LUCIDE
+// ======================================================
+
+function refreshIcons() {
+
+    if (typeof lucide !== 'undefined') {
+
+        lucide.createIcons();
+
+    }
+
+}
+
+
+// ======================================================
+// PREVIEW
+// ======================================================
+
+function showPreview(src) {
+
+    if (!src) {
+
+        preview.className =
+            'cover-preview placeholder';
+
+        preview.innerHTML = `
+            <i data-lucide="image"></i>
+
+            <span class="preview-placeholder-text">
+                Belum ada gambar
+            </span>
+        `;
+
+        refreshIcons();
+
+        return;
+    }
+
+
+    preview.className =
+        'cover-preview';
+
+
+    preview.innerHTML = `
+
+        <img
+            src="${escapeAttribute(src)}"
+            alt="Preview Sampul"
+            onerror="imageLoadError(this)"
+        >
+
+    `;
+}
+
+
+// ======================================================
+// ESCAPE ATTRIBUTE
+// ======================================================
+
+function escapeAttribute(value) {
+
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+}
+
+
+// ======================================================
+// ERROR GAMBAR
+// ======================================================
+
+function imageLoadError(image) {
+
+    image.parentElement.className =
+        'cover-preview placeholder';
+
+    image.parentElement.innerHTML = `
+
+        <i data-lucide="image-off"></i>
+
+        <span class="preview-placeholder-text">
+            Gambar tidak dapat dimuat
+        </span>
+
+    `;
+
+    refreshIcons();
+
+}
+
+
+// ======================================================
+// TAB SUMBER GAMBAR
+// ======================================================
+
+tabs.forEach(tab => {
+
+    tab.addEventListener('click', () => {
+
+        tabs.forEach(item => {
+
+            item.classList.remove('active');
+
+        });
+
+
+        tab.classList.add('active');
+
+
+        const source =
+            tab.dataset.source;
+
+
+        fileSource.classList.toggle(
+            'active',
+            source === 'file'
+        );
+
+
+        urlSource.classList.toggle(
+            'active',
+            source === 'url'
+        );
+
+
+        if (source === 'file') {
+
+            urlInput.value = '';
+
+            showPreview('');
+
+        } else {
+
+            fileInput.value = '';
+
+            showPreview(
+                urlInput.value.trim()
+            );
+
+        }
+
+    });
+
+});
+
+
+// ======================================================
+// FILE INPUT
+// ======================================================
+
+fileInput.addEventListener(
     'change',
-    function (e) {
+    () => {
+
+        if (!fileInput.files[0]) {
+
+            showPreview('');
+
+            return;
+        }
+
 
         const file =
-            e.target.files[0];
+            fileInput.files[0];
 
-        // =============================================
-        // JIKA TIDAK ADA FILE
-        // =============================================
 
-        if (!file) {
+        if (
+            !file.type.startsWith('image/')
+        ) {
 
-            preview.style.display =
-                'none';
+            fileInput.value = '';
 
-            placeholder.style.display =
-                'flex';
-
-            preview.src = '';
+            showPreview('');
 
             return;
         }
 
-
-        // =============================================
-        // CEK UKURAN
-        // =============================================
-
-        const maxSize =
-            2 * 1024 * 1024;
-
-        if (file.size > maxSize) {
-
-            showUploadError(
-                'Ukuran cover maksimal 2 MB.'
-            );
-
-            return;
-        }
-
-
-        // =============================================
-        // CEK MIME TYPE
-        // =============================================
-
-        const allowedTypes = [
-            'image/jpeg',
-            'image/png',
-            'image/webp'
-        ];
-
-        if (!allowedTypes.includes(file.type)) {
-
-            showUploadError(
-                'Format cover harus JPG, PNG, atau WEBP.'
-            );
-
-            return;
-        }
-
-
-        // =============================================
-        // PREVIEW
-        // =============================================
 
         const reader =
             new FileReader();
 
+
         reader.onload =
-            function (evt) {
+            event => {
 
-                preview.src =
-                    evt.target.result;
+                showPreview(
+                    event.target.result
+                );
 
-                preview.style.display =
-                    'block';
-
-                placeholder.style.display =
-                    'none';
             };
 
+
         reader.readAsDataURL(file);
+
+
+        urlInput.value = '';
+
     }
 );
 
 
-// =====================================================
-// ERROR UPLOAD
-// =====================================================
+// ======================================================
+// URL INPUT
+// ======================================================
 
-function showUploadError(message) {
+urlInput.addEventListener(
+    'input',
+    () => {
 
-    coverInput.value = '';
+        const value =
+            urlInput.value.trim();
 
-    preview.src = '';
 
-    preview.style.display =
-        'none';
+        if (value) {
 
-    placeholder.style.display =
-        'flex';
+            fileInput.value = '';
 
-    let alertBox =
-        document.querySelector(
-            '.tb-upload-alert'
-        );
+            showPreview(value);
 
-    if (!alertBox) {
+        } else {
 
-        alertBox =
-            document.createElement('div');
+            showPreview('');
 
-        alertBox.className =
-            'tb-upload-alert';
+        }
 
-        alertBox.style.cssText = `
-            margin-top:10px;
-            padding:10px 12px;
-            border-radius:9px;
-            background:#fdecea;
-            border:1px solid #f5c6c2;
-            color:#b3261e;
-            font-size:12px;
-        `;
-
-        document
-            .querySelector('.tb-cover-input')
-            .appendChild(alertBox);
     }
-
-    alertBox.textContent =
-        message;
-
-    setTimeout(
-        function () {
-
-            if (alertBox) {
-                alertBox.remove();
-            }
-
-        },
-        4000
-    );
-}
+);
 
 
-// =====================================================
-// SUBMIT FORM
-// =====================================================
+// ======================================================
+// SUBMIT
+// ======================================================
 
 document
-    .getElementById('tbForm')
+    .getElementById('bookForm')
     .addEventListener(
         'submit',
-        function () {
+        () => {
 
-            const btn =
-                document.getElementById(
-                    'tbBtnSave'
+            const button =
+                document.querySelector(
+                    '.form-button.submit'
                 );
 
-            btn.disabled = true;
 
-            btn.innerHTML = `
-                <span class="tb-spinner"></span>
-                MENYIMPAN...
+            if (!button) {
+                return;
+            }
+
+
+            button.innerHTML = `
+
+                <i
+                    data-lucide="loader-circle"
+                    class="submit-loader"
+                ></i>
+
+                Menyimpan...
+
             `;
+
+
+            button.disabled = true;
+
+            button.style.opacity = '0.8';
+
+            refreshIcons();
+
         }
     );
 
 
-// =====================================================
-// AUTO UPPERCASE KODE BUKU
-// =====================================================
+// ======================================================
+// LOAD ICON
+// ======================================================
 
-const kodeInput =
-    document.querySelector(
-        'input[name="kode_buku"]'
-    );
-
-kodeInput.addEventListener(
-    'input',
-    function () {
-
-        this.value =
-            this.value.toUpperCase();
-    }
-);
+refreshIcons();
 
 </script>
 
+
+<style>
+
+.submit-loader {
+    animation:
+        submitSpin .8s linear infinite;
+}
+
+
+@keyframes submitSpin {
+
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+
+}
+
+</style>
+
+
 </body>
+
 </html>

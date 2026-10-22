@@ -1,15 +1,42 @@
 <?php
-header('Content-Type: application/json');
+
 require_once 'koneksi.php';
 
-$query = "SELECT * FROM books ORDER BY id DESC";
-$result = mysqli_query($koneksi, $query);
+header('Content-Type: application/json; charset=utf-8');
 
-$books = array();
+try {
 
-while ($row = mysqli_fetch_assoc($result)) {
-    $books[] = $row;
+    $sql = "
+        SELECT
+            id,
+            kode_buku,
+            judul,
+            penulis,
+            kategori,
+            tahun_terbit,
+            penerbit,
+            gambar
+        FROM books
+        ORDER BY id DESC
+    ";
+
+    $stmt = $pdo->query($sql);
+
+    $books = $stmt->fetchAll();
+
+    echo json_encode([
+        'success' => true,
+        'data' => $books
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+} catch (PDOException $e) {
+
+    http_response_code(500);
+
+    echo json_encode([
+        'success' => false,
+        'message' => 'Gagal mengambil data buku.',
+        'error' => $e->getMessage()
+    ], JSON_UNESCAPED_UNICODE);
+
 }
-
-echo json_encode($books);
-?>

@@ -1,633 +1,1923 @@
 <?php
-session_start();
-if (!isset($_SESSION['admin_login'])) {
-    header("Location: login.php");
-    exit;
-}
 
 require_once 'koneksi.php';
+require_once 'auth.php';
 
-// Menghitung Statistik dari Database
- $total_buku = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as total FROM books"))['total'];
- $total_kategori = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(DISTINCT kategori) as total FROM books"))['total'];
- $total_penulis = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(DISTINCT penulis) as total FROM books"))['total'];
- $terbit_terbaru = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT MAX(tahun_terbit) as max_tahun FROM books"))['max_tahun'];
+requireLogin();
 
-// Query Data untuk Diagram Kategori (Bar Chart)
- $query_kategori = mysqli_query($koneksi, "SELECT kategori, COUNT(*) as jumlah FROM books GROUP BY kategori");
- $kat_labels = [];
- $kat_counts = [];
-while ($row = mysqli_fetch_assoc($query_kategori)) {
-    $kat_labels[] = $row['kategori'];
-    $kat_counts[] = $row['jumlah'];
+
+// ======================================================
+// DATA STATISTIK
+// ======================================================
+
+$totalBuku = (int)$pdo
+    ->query('SELECT COUNT(*) FROM books')
+    ->fetchColumn();
+
+$totalKategori = (int)$pdo
+    ->query('SELECT COUNT(DISTINCT kategori) FROM books')
+    ->fetchColumn();
+
+$totalPenulis = (int)$pdo
+    ->query('SELECT COUNT(DISTINCT penulis) FROM books')
+    ->fetchColumn();
+
+$tahunTerbaru = $pdo
+    ->query('SELECT MAX(tahun_terbit) FROM books')
+    ->fetchColumn() ?: '-';
+
+$totalTerbaru = (int)$pdo
+    ->query(
+        'SELECT COUNT(*) 
+         FROM books 
+         WHERE tahun_terbit = (
+             SELECT MAX(tahun_terbit) FROM books
+         )'
+    )
+    ->fetchColumn();
+
+
+// ======================================================
+// DATA KATEGORI
+// ======================================================
+
+$kategoriRows = $pdo
+    ->query(
+        'SELECT kategori, COUNT(*) AS jumlah
+         FROM books
+         GROUP BY kategori
+         ORDER BY jumlah DESC, kategori ASC'
+    )
+    ->fetchAll();
+
+
+// ======================================================
+// DATA PER TAHUN
+// ======================================================
+
+$tahunRows = $pdo
+    ->query(
+        'SELECT tahun_terbit, COUNT(*) AS jumlah
+         FROM books
+         GROUP BY tahun_terbit
+         ORDER BY tahun_terbit ASC'
+    )
+    ->fetchAll();
+
+
+// ======================================================
+// DATA BUKU TERBARU
+// ======================================================
+
+$latestBooks = $pdo
+    ->query(
+        'SELECT *
+         FROM books
+         ORDER BY id DESC
+         LIMIT 5'
+    )
+    ->fetchAll();
+
+
+// ======================================================
+// DATA UNTUK CHART
+// ======================================================
+
+$kategoriLabels = [];
+$kategoriValues = [];
+
+foreach ($kategoriRows as $row) {
+
+    $kategoriLabels[] = $row['kategori'];
+    $kategoriValues[] = (int)$row['jumlah'];
+
 }
 
-// Query Data untuk Kurva Tren Buku Berdasarkan Tahun Terbit (Line Chart)
- $query_tahun = mysqli_query($koneksi, "SELECT tahun_terbit, COUNT(*) as jumlah FROM books GROUP BY tahun_terbit ORDER BY tahun_terbit ASC");
- $thn_labels = [];
- $thn_counts = [];
-while ($row = mysqli_fetch_assoc($query_tahun)) {
-    $thn_labels[] = $row['tahun_terbit'];
-    $thn_counts[] = $row['jumlah'];
+
+$tahunLabels = [];
+$tahunValues = [];
+
+foreach ($tahunRows as $row) {
+
+    $tahunLabels[] = (string)$row['tahun_terbit'];
+    $tahunValues[] = (int)$row['jumlah'];
+
 }
+
 ?>
+
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Admin — Perpustakaan Digital</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Dashboard - Perpus API</title>
+
+    <link rel="stylesheet" href="style.css">
+
+
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        body {
-            font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, #faf5f5 0%, #f7ecec 50%, #fdf7f2 100%);
-            min-height: 100vh;
-            color: #2b0509;
+        /* =====================================================
+           DASHBOARD
+        ====================================================== */
+
+        .dashboard-page {
+            max-width: 100%;
         }
 
-        /* ====== LAYOUT ====== */
-        .app-layout { display: flex; min-height: 100vh; }
 
-        .main-content {
-            flex: 1;
-            margin-left: 260px;
+        /* =====================================================
+           HEADER
+        ====================================================== */
+
+        .dashboard-header {
+
             display: flex;
-            flex-direction: column;
-            min-width: 0;
-        }
 
-        .content-body { padding: 28px 32px 40px; }
-
-        /* ====== HEADER HALAMAN ====== */
-        .page-header {
-            display: flex;
             align-items: center;
+
             justify-content: space-between;
-            flex-wrap: wrap;
+
+            gap: 20px;
+
+            margin-bottom: 25px;
+
+        }
+
+
+        .dashboard-heading {
+
+            display: flex;
+
+            align-items: flex-start;
+
             gap: 14px;
-            margin-bottom: 26px;
-            animation: fadeUp .6s ease both;
-        }
-        .page-title {
-            font-size: 24px;
-            font-weight: 700;
-            background: linear-gradient(90deg, #4a0812, #8f1226, #c9184a);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .page-title svg { width: 30px; height: 30px; color: #8f1226; -webkit-text-fill-color: #8f1226; }
 
-        .date-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: #fff;
-            border: 1px solid #f0dcdc;
-            color: #8f1226;
-            font-size: 13px;
-            font-weight: 500;
-            padding: 9px 16px;
-            border-radius: 99px;
-            box-shadow: 0 3px 10px rgba(143,18,38,.07);
-        }
-        .date-badge svg { width: 16px; height: 16px; }
-
-        /* ====== KARTU STATISTIK GRADASI ====== */
-        .card-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-            gap: 20px;
         }
 
-        .stat-card {
-            position: relative;
-            border-radius: 18px;
-            padding: 24px 22px;
-            color: #fff;
-            overflow: hidden;
-            cursor: default;
-            box-shadow: 0 12px 28px rgba(74,8,18,.28);
-            transition: transform .35s cubic-bezier(.22,1,.36,1), box-shadow .35s;
-            animation: fadeUp .7s ease both;
-        }
-        .stat-card:hover { transform: translateY(-6px); box-shadow: 0 20px 38px rgba(74,8,18,.4); }
 
-        .stat-card::after {
-            content: "";
-            position: absolute;
-            top: -40px; right: -40px;
-            width: 130px; height: 130px;
-            background: rgba(255,255,255,.12);
-            border-radius: 50%;
-            transition: transform .5s;
-        }
-        .stat-card:hover::after { transform: scale(1.4); }
+        .dashboard-heading-icon {
 
-        .stat-card.c1 { background: linear-gradient(135deg, #c9184a 0%, #8f1226 60%, #5c0a14 100%); animation-delay: .05s; }
-        .stat-card.c2 { background: linear-gradient(135deg, #a4133c 0%, #7a0e1c 60%, #4a0812 100%); animation-delay: .15s; }
-        .stat-card.c3 { background: linear-gradient(135deg, #8f1226 0%, #5c0a14 60%, #3d060e 100%); animation-delay: .25s; }
-        .stat-card.c4 { background: linear-gradient(135deg, #b3173f 0%, #800f2f 55%, #4a0812 100%); animation-delay: .35s; }
+            width: 48px;
 
-        .stat-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-        .stat-icon {
-            width: 46px; height: 46px;
-            border-radius: 13px;
-            background: rgba(255,255,255,.18);
-            backdrop-filter: blur(4px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
-        }
-        .stat-icon svg { width: 23px; height: 23px; color: #ffd8a8; }
-        .stat-trend {
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            background: rgba(255,255,255,.15);
-            padding: 5px 10px;
-            border-radius: 99px;
-        }
-        .stat-label { font-size: 13px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; opacity: .85; }
-        .stat-number {
-            font-size: 34px;
-            font-weight: 700;
-            line-height: 1.2;
-            margin-top: 4px;
-            text-shadow: 0 2px 10px rgba(0,0,0,.15);
-        }
+            height: 48px;
 
-        /* ====== KARTU CHART ====== */
-        .charts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 20px;
-            margin-top: 26px;
-        }
-
-        .chart-card {
-            background: #fff;
-            border-radius: 18px;
-            padding: 24px;
-            box-shadow: 0 8px 24px rgba(74,8,18,.08);
-            border: 1px solid #f7ebeb;
-            transition: transform .3s, box-shadow .3s;
-            animation: fadeUp .7s ease both;
-        }
-        .chart-card:nth-child(1) { animation-delay: .45s; }
-        .chart-card:nth-child(2) { animation-delay: .55s; }
-        .chart-card:hover { transform: translateY(-4px); box-shadow: 0 14px 32px rgba(74,8,18,.13); }
-
-        .chart-head {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 18px;
-        }
-        .chart-head-icon {
-            width: 38px; height: 38px;
-            border-radius: 11px;
-            background: linear-gradient(135deg, #c9184a, #8f1226);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 5px 12px rgba(143,18,38,.3);
             flex-shrink: 0;
-        }
-        .chart-head-icon svg { width: 19px; height: 19px; color: #ffd8a8; }
-        .chart-head h3 { font-size: 15.5px; font-weight: 600; color: #3d060e; }
-        .chart-head p  { font-size: 12px; color: #a29294; margin-top: 1px; }
 
-        .chart-wrap { position: relative; height: 300px; }
-
-        /* ====== BANNER SELAMAT DATANG ====== */
-        .welcome-banner {
-            margin-top: 26px;
-            border-radius: 18px;
-            padding: 28px 30px;
-            background: linear-gradient(120deg, #3d060e 0%, #5c0a14 35%, #8f1226 75%, #a4133c 100%);
-            background-size: 200% 200%;
-            animation: bannerShift 10s ease infinite, fadeUp .7s .65s ease both;
-            color: #fff;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 14px 34px rgba(61,6,14,.35);
-        }
-        @keyframes bannerShift {
-            0%, 100% { background-position: 0% 50%; }
-            50%      { background-position: 100% 50%; }
-        }
-        .welcome-banner::before {
-            content: "";
-            position: absolute;
-            right: -60px; top: -60px;
-            width: 220px; height: 220px;
-            background: radial-gradient(circle, rgba(233,196,106,.22), transparent 70%);
-            border-radius: 50%;
-        }
-        .welcome-banner h3 {
-            font-size: 19px;
-            font-weight: 600;
             display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .welcome-banner h3 svg { width: 24px; height: 24px; color: #e9c46a; }
-        .welcome-banner p {
-            margin-top: 10px;
-            font-size: 14px;
-            line-height: 1.7;
-            color: rgba(255,255,255,.82);
-            max-width: 720px;
-        }
-        .welcome-banner a {
-            color: #ffd8a8;
-            font-weight: 600;
-            text-decoration: none;
-            border-bottom: 1.5px solid rgba(255,216,168,.5);
-            transition: color .3s, border-color .3s;
-        }
-        .welcome-banner a:hover { color: #fff; border-color: #fff; }
 
-        /* Shortcut chips */
-        .shortcut-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            margin-top: 20px;
-        }
-        .shortcut-chip {
-            display: inline-flex;
             align-items: center;
-            gap: 9px;
-            background: rgba(255,255,255,.12);
-            border: 1px solid rgba(255,255,255,.2);
-            backdrop-filter: blur(4px);
-            color: #fff;
-            text-decoration: none;
+
+            justify-content: center;
+
+            border-radius: 13px;
+
+            color: #7a1729;
+
+            background: #f9e4e8;
+
+            border: 1px solid #f0cfd6;
+
+        }
+
+
+        .dashboard-heading-icon svg {
+
+            width: 23px;
+
+            height: 23px;
+
+            stroke-width: 1.8;
+
+        }
+
+
+        .dashboard-heading h1 {
+
+            margin: 0 0 5px;
+
+            color: #431019;
+
+            font-size: 27px;
+
+            line-height: 1.2;
+
+            font-weight: 800;
+
+            letter-spacing: -.4px;
+
+        }
+
+
+        .dashboard-heading p {
+
+            margin: 0;
+
+            color: #92747b;
+
             font-size: 13px;
-            font-weight: 500;
-            padding: 10px 18px;
-            border-radius: 99px;
-            transition: background .3s, transform .3s, border-color .3s;
+
+            line-height: 1.5;
+
         }
-        .shortcut-chip svg { width: 16px; height: 16px; color: #ffd8a8; }
-        .shortcut-chip:hover {
-            background: rgba(255,255,255,.24);
-            border-color: rgba(255,255,255,.45);
+
+
+        /* =====================================================
+           HEADER BUTTON
+        ====================================================== */
+
+        .dashboard-logout {
+
+            height: 40px;
+
+            display: inline-flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            gap: 7px;
+
+            padding: 0 14px;
+
+            color: #a0374a;
+
+            background: #fff0f2;
+
+            border: 1px solid #f1d4d9;
+
+            border-radius: 9px;
+
+            text-decoration: none;
+
+            font-size: 12px;
+
+            font-weight: 700;
+
+            transition: .2s ease;
+
+        }
+
+
+        .dashboard-logout svg {
+
+            width: 16px;
+
+            height: 16px;
+
+        }
+
+
+        .dashboard-logout:hover {
+
+            background: #fbe0e4;
+
+            transform: translateY(-1px);
+
+        }
+
+
+        /* =====================================================
+           STAT CARDS
+        ====================================================== */
+
+        .dashboard-stats {
+
+            display: grid;
+
+            grid-template-columns:
+                repeat(4, minmax(0, 1fr));
+
+            gap: 14px;
+
+            margin-bottom: 20px;
+
+        }
+
+
+        .dashboard-stat {
+
+            position: relative;
+
+            overflow: hidden;
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 13px;
+
+            min-height: 105px;
+
+            padding: 18px;
+
+            background: #fff;
+
+            border: 1px solid #eee1e4;
+
+            border-radius: 14px;
+
+            box-shadow:
+                0 6px 22px rgba(70,12,24,.045);
+
+            transition: .2s ease;
+
+        }
+
+
+        .dashboard-stat:hover {
+
             transform: translateY(-2px);
+
+            box-shadow:
+                0 10px 27px rgba(70,12,24,.08);
+
         }
 
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(18px); }
-            to   { opacity: 1; transform: none; }
+
+        .dashboard-stat::after {
+
+            content: "";
+
+            position: absolute;
+
+            right: -30px;
+
+            bottom: -30px;
+
+            width: 90px;
+
+            height: 90px;
+
+            border-radius: 50%;
+
+            background: rgba(122,23,41,.035);
+
         }
 
-        /* ====== RESPONSIVE ====== */
-        @media (max-width: 992px) {
-            .main-content { margin-left: 0; }
+
+        .stat-icon {
+
+            width: 45px;
+
+            height: 45px;
+
+            flex-shrink: 0;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            border-radius: 12px;
+
         }
-        @media (max-width: 640px) {
-            .content-body { padding: 20px 16px 32px; }
-            .charts-grid { grid-template-columns: 1fr; }
-            .stat-number { font-size: 28px; }
+
+
+        .stat-icon svg {
+
+            width: 21px;
+
+            height: 21px;
+
+            stroke-width: 1.8;
+
         }
+
+
+        .stat-icon.book {
+
+            color: #7a1729;
+
+            background: #fae7ea;
+
+        }
+
+
+        .stat-icon.category {
+
+            color: #8b5a19;
+
+            background: #fff4dc;
+
+        }
+
+
+        .stat-icon.author {
+
+            color: #356b8a;
+
+            background: #e8f3f8;
+
+        }
+
+
+        .stat-icon.year {
+
+            color: #5d4a8a;
+
+            background: #eeeafd;
+
+        }
+
+
+        .stat-content {
+
+            min-width: 0;
+
+            display: flex;
+
+            flex-direction: column;
+
+            gap: 4px;
+
+        }
+
+
+        .stat-label {
+
+            color: #a08389;
+
+            font-size: 10px;
+
+            font-weight: 800;
+
+            letter-spacing: .65px;
+
+            text-transform: uppercase;
+
+        }
+
+
+        .stat-number {
+
+            color: #48141d;
+
+            font-size: 25px;
+
+            line-height: 1;
+
+            font-weight: 800;
+
+        }
+
+
+        .stat-description {
+
+            color: #a08389;
+
+            font-size: 10px;
+
+        }
+
+
+        /* =====================================================
+           CHART GRID
+        ====================================================== */
+
+        .dashboard-chart-grid {
+
+            display: grid;
+
+            grid-template-columns:
+                1fr 1.55fr;
+
+            gap: 16px;
+
+            margin-bottom: 16px;
+
+        }
+
+
+        .dashboard-panel {
+
+            background: #fff;
+
+            border: 1px solid #eee1e4;
+
+            border-radius: 15px;
+
+            box-shadow:
+                0 7px 25px rgba(70,12,24,.05);
+
+            overflow: hidden;
+
+        }
+
+
+        .dashboard-panel-header {
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: space-between;
+
+            gap: 15px;
+
+            padding: 17px 18px;
+
+            border-bottom: 1px solid #f0e5e7;
+
+        }
+
+
+        .dashboard-panel-title {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 10px;
+
+        }
+
+
+        .panel-title-icon {
+
+            width: 34px;
+
+            height: 34px;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            border-radius: 9px;
+
+            color: #7a1729;
+
+            background: #fae7ea;
+
+        }
+
+
+        .panel-title-icon svg {
+
+            width: 17px;
+
+            height: 17px;
+
+        }
+
+
+        .dashboard-panel-header h2 {
+
+            margin: 0 0 3px;
+
+            color: #4a121b;
+
+            font-size: 14px;
+
+            font-weight: 800;
+
+        }
+
+
+        .dashboard-panel-header p {
+
+            margin: 0;
+
+            color: #a08389;
+
+            font-size: 10px;
+
+        }
+
+
+        .chart-container {
+
+            position: relative;
+
+            height: 280px;
+
+            padding: 18px;
+
+        }
+
+
+        .chart-container.line {
+
+            height: 280px;
+
+        }
+
+
+        /* =====================================================
+           BOTTOM GRID
+        ====================================================== */
+
+        .dashboard-bottom-grid {
+
+            display: grid;
+
+            grid-template-columns:
+                1.25fr 1fr;
+
+            gap: 16px;
+
+        }
+
+
+        /* =====================================================
+           CATEGORY LIST
+        ====================================================== */
+
+        .category-list {
+
+            padding: 5px 18px 17px;
+
+        }
+
+
+        .category-item {
+
+            padding: 12px 0;
+
+            border-bottom: 1px solid #f3e9eb;
+
+        }
+
+
+        .category-item:last-child {
+
+            border-bottom: none;
+
+        }
+
+
+        .category-top {
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: space-between;
+
+            gap: 15px;
+
+            margin-bottom: 7px;
+
+            color: #68434b;
+
+            font-size: 11px;
+
+        }
+
+
+        .category-top strong {
+
+            color: #7a1729;
+
+            font-size: 11px;
+
+        }
+
+
+        .progress {
+
+            height: 6px;
+
+            overflow: hidden;
+
+            background: #f5e9eb;
+
+            border-radius: 10px;
+
+        }
+
+
+        .progress span {
+
+            display: block;
+
+            height: 100%;
+
+            border-radius: inherit;
+
+            background:
+                linear-gradient(
+                    90deg,
+                    #661321,
+                    #a9324b
+                );
+
+        }
+
+
+        /* =====================================================
+           LATEST BOOKS
+        ====================================================== */
+
+        .latest-list {
+
+            padding: 4px 18px 17px;
+
+        }
+
+
+        .latest-row {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 11px;
+
+            padding: 10px 0;
+
+            border-bottom: 1px solid #f3e9eb;
+
+        }
+
+
+        .latest-row:last-child {
+
+            border-bottom: none;
+
+        }
+
+
+        .latest-cover {
+
+            width: 39px;
+
+            height: 50px;
+
+            flex-shrink: 0;
+
+            overflow: hidden;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            border-radius: 6px;
+
+            background:
+                linear-gradient(
+                    145deg,
+                    #f7e0e4,
+                    #f2cbd2
+                );
+
+            border: 1px solid #ecd0d5;
+
+            color: #8c394a;
+
+        }
+
+
+        .latest-cover img {
+
+            width: 100%;
+
+            height: 100%;
+
+            object-fit: cover;
+
+        }
+
+
+        .latest-cover svg {
+
+            width: 17px;
+
+            height: 17px;
+
+        }
+
+
+        .latest-info {
+
+            min-width: 0;
+
+            display: flex;
+
+            flex-direction: column;
+
+            gap: 4px;
+
+        }
+
+
+        .latest-title {
+
+            overflow: hidden;
+
+            color: #48141d;
+
+            font-size: 11px;
+
+            font-weight: 750;
+
+            white-space: nowrap;
+
+            text-overflow: ellipsis;
+
+        }
+
+
+        .latest-meta {
+
+            color: #a08389;
+
+            font-size: 10px;
+
+        }
+
+
+        .latest-action {
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            width: 30px;
+
+            height: 30px;
+
+            margin-left: auto;
+
+            flex-shrink: 0;
+
+            color: #7a1729;
+
+            background: #fae7ea;
+
+            border: 1px solid #efd3d8;
+
+            border-radius: 8px;
+
+            text-decoration: none;
+
+        }
+
+
+        .latest-action svg {
+
+            width: 14px;
+
+            height: 14px;
+
+        }
+
+
+        .latest-action:hover {
+
+            background: #f6dce1;
+
+        }
+
+
+        /* =====================================================
+           EMPTY
+        ====================================================== */
+
+        .dashboard-empty {
+
+            padding: 35px 20px;
+
+            text-align: center;
+
+            color: #a08389;
+
+            font-size: 11px;
+
+        }
+
+
+        /* =====================================================
+           RESPONSIVE
+        ====================================================== */
+
+        @media (max-width: 1150px) {
+
+            .dashboard-stats {
+
+                grid-template-columns:
+                    repeat(2, minmax(0, 1fr));
+
+            }
+
+
+            .dashboard-chart-grid {
+
+                grid-template-columns: 1fr;
+
+            }
+
+
+            .dashboard-bottom-grid {
+
+                grid-template-columns: 1fr;
+
+            }
+
+        }
+
+
+        @media (max-width: 650px) {
+
+            .dashboard-header {
+
+                align-items: flex-start;
+
+                flex-direction: column;
+
+            }
+
+
+            .dashboard-stats {
+
+                grid-template-columns: 1fr;
+
+            }
+
+
+            .dashboard-heading h1 {
+
+                font-size: 23px;
+
+            }
+
+
+            .dashboard-logout {
+
+                width: 100%;
+
+            }
+
+
+            .dashboard-panel-header {
+
+                align-items: flex-start;
+
+                flex-direction: column;
+
+            }
+
+
+            .chart-container {
+
+                height: 240px;
+
+                padding: 12px;
+
+            }
+
+        }
+
     </style>
+
 </head>
+
+
 <body>
-    <div class="app-layout">
-        <!-- Sidebar Menu -->
-        <?php include 'sidebar.php'; ?>
 
-        <!-- Main Content Area -->
-        <div class="main-content">
-            <!-- Topbar (Profile Admin) -->
-            <?php include 'topbar.php'; ?>
+<div class="app">
 
-            <!-- Content Body -->
-            <div class="content-body">
-                <div class="page-header">
-                    <h2 class="page-title">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/>
-                            <rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>
-                        </svg>
-                        Dashboard Statistik
-                    </h2>
-                    <span class="date-badge">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                            <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-                            <line x1="3" y1="10" x2="21" y2="10"/>
-                        </svg>
-                        <?= date('d M Y'); ?>
-                    </span>
+    <?php include 'sidebar.php'; ?>
+
+
+    <main class="main-content">
+
+        <div class="dashboard-page">
+
+
+            <!-- =================================================
+                 HEADER
+            ================================================== -->
+
+            <div class="dashboard-header">
+
+                <div class="dashboard-heading">
+
+                    <div class="dashboard-heading-icon">
+
+                        <i data-lucide="layout-dashboard"></i>
+
+                    </div>
+
+
+                    <div>
+
+                        <h1>
+                            Dashboard
+                        </h1>
+
+                        <p>
+                            Ringkasan dan statistik koleksi
+                            Perpustakaan Perpus API.
+                        </p>
+
+                    </div>
+
                 </div>
 
-                <!-- Cards Statistik -->
-                <div class="card-grid">
-                    <div class="stat-card c1">
-                        <div class="stat-top">
-                            <div class="stat-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-                                </svg>
-                            </div>
-                            <span class="stat-trend">Koleksi</span>
-                        </div>
-                        <div class="stat-label">Total Buku</div>
-                        <div class="stat-number" data-count="<?= $total_buku; ?>">0</div>
-                    </div>
 
-                    <div class="stat-card c2">
-                        <div class="stat-top">
-                            <div class="stat-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-                                    <line x1="7" y1="7" x2="7.01" y2="7"/>
-                                </svg>
-                            </div>
-                            <span class="stat-trend">Ragam</span>
-                        </div>
-                        <div class="stat-label">Kategori</div>
-                        <div class="stat-number" data-count="<?= $total_kategori; ?>">0</div>
-                    </div>
+                <a
+                    href="logout.php"
+                    class="dashboard-logout"
+                >
 
-                    <div class="stat-card c3">
-                        <div class="stat-top">
-                            <div class="stat-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-                                </svg>
-                            </div>
-                            <span class="stat-trend">Kontributor</span>
-                        </div>
-                        <div class="stat-label">Data Penulis</div>
-                        <div class="stat-number" data-count="<?= $total_penulis; ?>">0</div>
-                    </div>
+                    <i data-lucide="log-out"></i>
 
-                    <div class="stat-card c4">
-                        <div class="stat-top">
-                            <div class="stat-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                                </svg>
-                            </div>
-                            <span class="stat-trend">Terbaru</span>
-                        </div>
-                        <div class="stat-label">Terbit Terbaru</div>
-                        <div class="stat-number" data-count="<?= $terbit_terbaru ?? 0; ?>" data-plain="1"><?= $terbit_terbaru ?? '-'; ?></div>
-                    </div>
-                </div>
+                    Logout
 
-                <!-- Section Diagram & Kurva -->
-                <div class="charts-grid">
-                    <!-- Diagram Batang Kategori Buku -->
-                    <div class="chart-card">
-                        <div class="chart-head">
-                            <div class="chart-head-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <line x1="12" y1="20" x2="22" y2="20"/><line x1="12" y1="16" x2="18" y2="16"/>
-                                    <line x1="12" y1="8" x2="15" y2="8"/><line x1="12" y1="4" x2="13" y2="4"/>
-                                    <line x1="4" y1="20" x2="4" y2="4"/>
-                                </svg>
-                            </div>
-                            <div>
-                                <h3>Jumlah Buku Per Kategori</h3>
-                                <p>Sebaran koleksi berdasarkan klasifikasi</p>
-                            </div>
-                        </div>
-                        <div class="chart-wrap"><canvas id="kategoriChart"></canvas></div>
-                    </div>
+                </a>
 
-                    <!-- Kurva Tren Tahun Terbit -->
-                    <div class="chart-card">
-                        <div class="chart-head">
-                            <div class="chart-head-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-                                    <polyline points="17 6 23 6 23 12"/>
-                                </svg>
-                            </div>
-                            <div>
-                                <h3>Kurva Tren Terbit Buku</h3>
-                                <p>Perkembangan jumlah terbitan per tahun</p>
-                            </div>
-                        </div>
-                        <div class="chart-wrap"><canvas id="trenChart"></canvas></div>
-                    </div>
-                </div>
-
-                <!-- Banner Selamat Datang -->
-                <div class="welcome-banner">
-                    <h3>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 2l2.4 4.86 5.36.78-3.88 3.78.92 5.34L12 14.24l-4.8 2.52.92-5.34L4.24 7.64l5.36-.78L12 2z"/>
-                        </svg>
-                        Selamat Datang di Sistem Kelola Perpustakaan
-                    </h3>
-                    <p>
-                        Gunakan menu di sidebar untuk mengelola <a href="buku.php">Data Buku</a>, mengorganisir kategori,
-                        memantau transaksi peminjaman, atau mencetak laporan Excel/PDF. Semua data ditampilkan secara real-time
-                        dari basis data perpustakaan.
-                    </p>
-                    <div class="shortcut-row">
-                        <a href="buku.php" class="shortcut-chip">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-                            </svg>
-                            Kelola Buku
-                        </a>
-                       
-                        <a href="pengaturan.php" class="shortcut-chip">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
-                                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
-                            </svg>
-                            Pengaturan
-                        </a>
-                    </div>
-                </div>
             </div>
+
+
+            <!-- =================================================
+                 STATISTIK
+            ================================================== -->
+
+            <section class="dashboard-stats">
+
+
+                <div class="dashboard-stat">
+
+                    <div class="stat-icon book">
+
+                        <i data-lucide="library"></i>
+
+                    </div>
+
+
+                    <div class="stat-content">
+
+                        <span class="stat-label">
+                            Total Buku
+                        </span>
+
+                        <span class="stat-number">
+                            <?= $totalBuku ?>
+                        </span>
+
+                        <span class="stat-description">
+                            Semua koleksi buku
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="dashboard-stat">
+
+                    <div class="stat-icon category">
+
+                        <i data-lucide="tags"></i>
+
+                    </div>
+
+
+                    <div class="stat-content">
+
+                        <span class="stat-label">
+                            Kategori
+                        </span>
+
+                        <span class="stat-number">
+                            <?= $totalKategori ?>
+                        </span>
+
+                        <span class="stat-description">
+                            Kategori berbeda
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="dashboard-stat">
+
+                    <div class="stat-icon author">
+
+                        <i data-lucide="users"></i>
+
+                    </div>
+
+
+                    <div class="stat-content">
+
+                        <span class="stat-label">
+                            Penulis
+                        </span>
+
+                        <span class="stat-number">
+                            <?= $totalPenulis ?>
+                        </span>
+
+                        <span class="stat-description">
+                            Penulis berbeda
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="dashboard-stat">
+
+                    <div class="stat-icon year">
+
+                        <i data-lucide="calendar-days"></i>
+
+                    </div>
+
+
+                    <div class="stat-content">
+
+                        <span class="stat-label">
+                            Terbit Terbaru
+                        </span>
+
+                        <span class="stat-number">
+                            <?= e((string)$tahunTerbaru) ?>
+                        </span>
+
+                        <span class="stat-description">
+                            <?= $totalTerbaru ?> buku pada tahun tersebut
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+            </section>
+
+
+            <!-- =================================================
+                 GRAFIK
+            ================================================== -->
+
+            <section class="dashboard-chart-grid">
+
+
+                <!-- GRAFIK KATEGORI -->
+
+                <div class="dashboard-panel">
+
+                    <div class="dashboard-panel-header">
+
+                        <div class="dashboard-panel-title">
+
+                            <div class="panel-title-icon">
+
+                                <i data-lucide="pie-chart"></i>
+
+                            </div>
+
+
+                            <div>
+
+                                <h2>
+                                    Distribusi Kategori
+                                </h2>
+
+                                <p>
+                                    Jumlah buku berdasarkan kategori
+                                </p>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="chart-container">
+
+                        <canvas id="categoryChart"></canvas>
+
+                    </div>
+
+                </div>
+
+
+                <!-- GRAFIK TAHUN -->
+
+                <div class="dashboard-panel">
+
+                    <div class="dashboard-panel-header">
+
+                        <div class="dashboard-panel-title">
+
+                            <div class="panel-title-icon">
+
+                                <i data-lucide="chart-line"></i>
+
+                            </div>
+
+
+                            <div>
+
+                                <h2>
+                                    Tren Tahun Terbit
+                                </h2>
+
+                                <p>
+                                    Perkembangan jumlah buku berdasarkan tahun
+                                </p>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="chart-container line">
+
+                        <canvas id="yearChart"></canvas>
+
+                    </div>
+
+                </div>
+
+
+            </section>
+
+
+            <!-- =================================================
+                 BOTTOM
+            ================================================== -->
+
+            <section class="dashboard-bottom-grid">
+
+
+                <!-- DISTRIBUSI -->
+
+                <div class="dashboard-panel">
+
+                    <div class="dashboard-panel-header">
+
+                        <div class="dashboard-panel-title">
+
+                            <div class="panel-title-icon">
+
+                                <i data-lucide="bar-chart-3"></i>
+
+                            </div>
+
+
+                            <div>
+
+                                <h2>
+                                    Distribusi Koleksi
+                                </h2>
+
+                                <p>
+                                    Perbandingan jumlah buku setiap kategori
+                                </p>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <?php if ($kategoriRows): ?>
+
+                        <div class="category-list">
+
+                            <?php
+
+                            $maxKategori =
+                                max(
+                                    array_column(
+                                        $kategoriRows,
+                                        'jumlah'
+                                    )
+                                );
+
+                            foreach ($kategoriRows as $row):
+
+                                $percentage =
+                                    $maxKategori > 0
+                                    ? (
+                                        ($row['jumlah'] / $maxKategori)
+                                        * 100
+                                    )
+                                    : 0;
+
+                            ?>
+
+                                <div class="category-item">
+
+                                    <div class="category-top">
+
+                                        <span>
+                                            <?= e($row['kategori']) ?>
+                                        </span>
+
+                                        <strong>
+                                            <?= (int)$row['jumlah'] ?>
+                                            buku
+                                        </strong>
+
+                                    </div>
+
+
+                                    <div class="progress">
+
+                                        <span
+                                            style="width: <?= $percentage ?>%"
+                                        ></span>
+
+                                    </div>
+
+                                </div>
+
+                            <?php endforeach; ?>
+
+                        </div>
+
+                    <?php else: ?>
+
+                        <div class="dashboard-empty">
+
+                            Belum ada data buku.
+
+                        </div>
+
+                    <?php endif; ?>
+
+                </div>
+
+
+                <!-- BUKU TERBARU -->
+
+                <div class="dashboard-panel">
+
+                    <div class="dashboard-panel-header">
+
+                        <div class="dashboard-panel-title">
+
+                            <div class="panel-title-icon">
+
+                                <i data-lucide="clock-3"></i>
+
+                            </div>
+
+
+                            <div>
+
+                                <h2>
+                                    Buku Terbaru
+                                </h2>
+
+                                <p>
+                                    5 buku terakhir ditambahkan
+                                </p>
+
+                            </div>
+
+                        </div>
+
+
+                        <a
+                            href="tambah.php"
+                            class="latest-action"
+                            title="Tambah Buku"
+                        >
+
+                            <i data-lucide="plus"></i>
+
+                        </a>
+
+                    </div>
+
+
+                    <div class="latest-list">
+
+                        <?php if ($latestBooks): ?>
+
+                            <?php foreach ($latestBooks as $book): ?>
+
+                                <div class="latest-row">
+
+
+                                    <div class="latest-cover">
+
+                                        <?php if (!empty($book['gambar'])): ?>
+
+                                            <img
+                                                src="<?= e($book['gambar']) ?>"
+                                                alt="Sampul <?= e($book['judul']) ?>"
+                                                onerror="
+                                                    this.style.display='none';
+                                                    this.nextElementSibling.style.display='block';
+                                                "
+                                            >
+
+                                            <i
+                                                data-lucide="book-open"
+                                                style="display:none;"
+                                            ></i>
+
+                                        <?php else: ?>
+
+                                            <i data-lucide="book-open"></i>
+
+                                        <?php endif; ?>
+
+                                    </div>
+
+
+                                    <div class="latest-info">
+
+                                        <span class="latest-title">
+
+                                            <?= e($book['judul']) ?>
+
+                                        </span>
+
+
+                                        <span class="latest-meta">
+
+                                            <?= e($book['penulis']) ?>
+
+                                            ·
+
+                                            <?= e($book['tahun_terbit']) ?>
+
+                                        </span>
+
+                                    </div>
+
+
+                                    <a
+                                        href="edit.php?id=<?= urlencode($book['id']) ?>"
+                                        class="latest-action"
+                                        title="Edit Buku"
+                                    >
+
+                                        <i data-lucide="chevron-right"></i>
+
+                                    </a>
+
+
+                                </div>
+
+                            <?php endforeach; ?>
+
+                        <?php else: ?>
+
+                            <div class="dashboard-empty">
+
+                                Belum ada buku.
+
+                            </div>
+
+                        <?php endif; ?>
+
+                    </div>
+
+                </div>
+
+
+            </section>
+
+
         </div>
-    </div>
 
-    <!-- Script Render Chart.js dengan Gradasi -->
-    <script>
-        // Data dari PHP
-        const katLabels = <?= json_encode($kat_labels); ?>;
-        const katCounts = <?= json_encode($kat_counts); ?>;
-        const thnLabels = <?= json_encode($thn_labels); ?>;
-        const thnCounts = <?= json_encode($thn_counts); ?>;
+    </main>
 
-        // Palet warna maroon
-        const MAROON      = '#8f1226';
-        const MAROON_MUDA = '#c9184a';
-        const MAROON_TUA  = '#4a0812';
-        const EMAS        = '#e9c46a';
+</div>
 
-        Chart.defaults.font.family = "'Poppins', sans-serif";
-        Chart.defaults.color = '#8a7f80';
 
-        // ====== BAR CHART: Gradasi Maroon ======
-        const ctxKategori = document.getElementById('kategoriChart').getContext('2d');
-        const gradBar = ctxKategori.createLinearGradient(0, 0, 0, 320);
-        gradBar.addColorStop(0,   MAROON_MUDA);   // merah marun terang di atas
-        gradBar.addColorStop(0.6, MAROON);        // marun tengah
-        gradBar.addColorStop(1,   MAROON_TUA);    // marun gelap di bawah
+<!-- =========================================================
+     LUCIDE
+========================================================== -->
 
-        const gradBarHover = ctxKategori.createLinearGradient(0, 0, 0, 320);
-        gradBarHover.addColorStop(0, '#e5383b');
-        gradBarHover.addColorStop(1, '#7a0e1c');
+<script src="https://unpkg.com/lucide@latest"></script>
 
-        new Chart(ctxKategori, {
-            type: 'bar',
-            data: {
-                labels: katLabels,
-                datasets: [{
-                    label: 'Jumlah Buku',
-                    data: katCounts,
-                    backgroundColor: gradBar,
-                    hoverBackgroundColor: gradBarHover,
-                    borderRadius: 8,
-                    borderSkipped: false,
-                    maxBarThickness: 55
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: { duration: 1200, easing: 'easeOutQuart' },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: '#3d060e',
-                        titleColor: '#ffd8a8',
-                        bodyColor: '#fff',
-                        padding: 12,
-                        cornerRadius: 10,
-                        displayColors: false,
-                        callbacks: {
-                            label: ctx => ` ${ctx.parsed.y} buku`
-                        }
-                    }
-                },
-                scales: {
-                    x: { grid: { display: false }, ticks: { font: { size: 11.5 } } },
-                    y: {
-                        beginAtZero: true,
-                        ticks: { precision: 0, font: { size: 11.5 } },
-                        grid: { color: 'rgba(143,18,38,.07)' }
-                    }
-                }
-            }
-        });
 
-        // ====== LINE CHART: Gradasi Garis & Area Fill ======
-        const ctxTren = document.getElementById('trenChart').getContext('2d');
+<!-- =========================================================
+     CHART.JS
+========================================================== -->
 
-        function gradGaris(ctx, area) {
-            const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
-            g.addColorStop(0, MAROON_MUDA);
-            g.addColorStop(1, MAROON_TUA);
-            return g;
-        }
-        function gradArea(ctx, area) {
-            const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
-            g.addColorStop(0,   'rgba(201, 24, 74, .35)');  // marun pekat di atas
-            g.addColorStop(0.5, 'rgba(143, 18, 38, .15)');
-            g.addColorStop(1,   'rgba(143, 18, 38, 0)');    // transparan di bawah
-            return g;
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+
+<script>
+
+document.addEventListener(
+    'DOMContentLoaded',
+    function () {
+
+
+        // ==================================================
+        // LUCIDE
+        // ==================================================
+
+        if (typeof lucide !== 'undefined') {
+
+            lucide.createIcons();
+
         }
 
-        new Chart(ctxTren, {
-            type: 'line',
-            data: {
-                labels: thnLabels,
-                datasets: [{
-                    label: 'Jumlah Terbitan',
-                    data: thnCounts,
-                    borderColor: ctx => {
-                        const { chart } = ctx;
-                        return chart.chartArea ? gradGaris(chart.ctx, chart.chartArea) : MAROON_MUDA;
+
+        // ==================================================
+        // DATA DARI PHP
+        // ==================================================
+
+        const kategoriLabels =
+            <?= json_encode(
+                $kategoriLabels,
+                JSON_UNESCAPED_UNICODE
+            ) ?>;
+
+        const kategoriValues =
+            <?= json_encode(
+                $kategoriValues
+            ) ?>;
+
+
+        const tahunLabels =
+            <?= json_encode(
+                $tahunLabels,
+                JSON_UNESCAPED_UNICODE
+            ) ?>;
+
+        const tahunValues =
+            <?= json_encode(
+                $tahunValues
+            ) ?>;
+
+
+        // ==================================================
+        // CHART KATEGORI
+        // ==================================================
+
+        const categoryCanvas =
+            document.getElementById(
+                'categoryChart'
+            );
+
+
+        if (
+            categoryCanvas
+            &&
+            typeof Chart !== 'undefined'
+        ) {
+
+            new Chart(
+                categoryCanvas,
+                {
+
+                    type: 'doughnut',
+
+                    data: {
+
+                        labels: kategoriLabels,
+
+                        datasets: [
+
+                            {
+
+                                data: kategoriValues,
+
+                                borderWidth: 3,
+
+                                borderColor: '#ffffff',
+
+                                backgroundColor: [
+
+                                    '#7a1729',
+                                    '#9b2940',
+                                    '#b74459',
+                                    '#c96778',
+                                    '#d98b99',
+                                    '#e5abb5',
+                                    '#efd0d5',
+                                    '#f4e1e4'
+
+                                ]
+
+                            }
+
+                        ]
+
                     },
-                    backgroundColor: ctx => {
-                        const { chart } = ctx;
-                        return chart.chartArea ? gradArea(chart.ctx, chart.chartArea) : 'rgba(143,18,38,.1)';
-                    },
-                    fill: true,
-                    tension: 0.4,
-                    borderWidth: 3,
-                    pointRadius: 4.5,
-                    pointHoverRadius: 6.5,
-                    pointBackgroundColor: '#fff',
-                    pointBorderColor: MAROON,
-                    pointBorderWidth: 2.5
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: { duration: 1200, easing: 'easeOutQuart' },
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: '#3d060e',
-                        titleColor: '#ffd8a8',
-                        bodyColor: '#fff',
-                        padding: 12,
-                        cornerRadius: 10,
-                        displayColors: false,
-                        callbacks: {
-                            label: ctx => ` ${ctx.parsed.y} buku terbit`
+
+                    options: {
+
+                        responsive: true,
+
+                        maintainAspectRatio: false,
+
+                        cutout: '66%',
+
+                        plugins: {
+
+                            legend: {
+
+                                position: 'bottom',
+
+                                labels: {
+
+                                    usePointStyle: true,
+
+                                    pointStyle: 'circle',
+
+                                    padding: 14,
+
+                                    font: {
+
+                                        size: 10
+
+                                    }
+
+                                }
+
+                            },
+
+                            tooltip: {
+
+                                callbacks: {
+
+                                    label: function(context) {
+
+                                        const value =
+                                            context.raw;
+
+                                        const total =
+                                            context.dataset.data
+                                                .reduce(
+                                                    (
+                                                        sum,
+                                                        item
+                                                    ) =>
+                                                        sum + item,
+                                                    0
+                                                );
+
+                                        const percentage =
+                                            total > 0
+                                            ? (
+                                                value /
+                                                total *
+                                                100
+                                            ).toFixed(1)
+                                            : 0;
+
+                                        return (
+                                            ' ' +
+                                            context.label +
+                                            ': ' +
+                                            value +
+                                            ' buku (' +
+                                            percentage +
+                                            '%)'
+                                        );
+
+                                    }
+
+                                }
+
+                            }
+
                         }
+
                     }
-                },
-                scales: {
-                    x: { grid: { display: false }, ticks: { font: { size: 11.5 } } },
-                    y: {
-                        beginAtZero: true,
-                        ticks: { precision: 0, font: { size: 11.5 } },
-                        grid: { color: 'rgba(143,18,38,.07)' }
-                    }
+
                 }
-            }
-        });
+            );
 
-        // ====== ANIMASI ANGKA COUNTER ======
-        document.querySelectorAll('.stat-number').forEach(el => {
-            const target = parseInt(el.dataset.count) || 0;
+        }
 
-            // Kolom tahun tidak perlu format ribuan
-            const isPlain = el.dataset.plain === '1';
-            const format  = n => isPlain ? String(n) : n.toLocaleString('id-ID');
 
-            if (target === 0) { el.textContent = isPlain ? (el.textContent !== '0' ? el.textContent : '-') : '0'; return; }
+        // ==================================================
+        // CHART TREN TAHUN
+        // ==================================================
 
-            const durasi = 1400;
-            const mulai  = performance.now();
+        const yearCanvas =
+            document.getElementById(
+                'yearChart'
+            );
 
-            function update(sekarang) {
-                const progress = Math.min((sekarang - mulai) / durasi, 1);
-                const eased    = 1 - Math.pow(1 - progress, 3); // easeOutCubic
-                el.textContent = format(Math.floor(eased * target));
-                if (progress < 1) requestAnimationFrame(update);
-                else el.textContent = format(target);
-            }
-            requestAnimationFrame(update);
-        });
-    </script>
+
+        if (
+            yearCanvas
+            &&
+            typeof Chart !== 'undefined'
+        ) {
+
+            const ctx =
+                yearCanvas.getContext('2d');
+
+
+            const gradient =
+                ctx.createLinearGradient(
+                    0,
+                    0,
+                    0,
+                    260
+                );
+
+
+            gradient.addColorStop(
+                0,
+                'rgba(122,23,41,.24)'
+            );
+
+
+            gradient.addColorStop(
+                1,
+                'rgba(122,23,41,0)'
+            );
+
+
+            new Chart(
+                yearCanvas,
+                {
+
+                    type: 'line',
+
+                    data: {
+
+                        labels: tahunLabels,
+
+                        datasets: [
+
+                            {
+
+                                label: 'Jumlah Buku',
+
+                                data: tahunValues,
+
+                                borderColor: '#7a1729',
+
+                                backgroundColor: gradient,
+
+                                fill: true,
+
+                                tension: .4,
+
+                                borderWidth: 2.5,
+
+                                pointRadius: 4,
+
+                                pointHoverRadius: 6,
+
+                                pointBackgroundColor: '#7a1729',
+
+                                pointBorderColor: '#ffffff',
+
+                                pointBorderWidth: 2
+
+                            }
+
+                        ]
+
+                    },
+
+                    options: {
+
+                        responsive: true,
+
+                        maintainAspectRatio: false,
+
+                        interaction: {
+
+                            intersect: false,
+
+                            mode: 'index'
+
+                        },
+
+                        plugins: {
+
+                            legend: {
+
+                                display: false
+
+                            },
+
+                            tooltip: {
+
+                                backgroundColor:
+                                    '#431019',
+
+                                titleColor:
+                                    '#ffffff',
+
+                                bodyColor:
+                                    '#f8e8eb',
+
+                                padding: 10,
+
+                                displayColors: false,
+
+                                callbacks: {
+
+                                    label: function(context) {
+
+                                        return (
+                                            ' ' +
+                                            context.raw +
+                                            ' buku'
+                                        );
+
+                                    }
+
+                                }
+
+                            }
+
+                        },
+
+                        scales: {
+
+                            x: {
+
+                                grid: {
+
+                                    display: false
+
+                                },
+
+                                ticks: {
+
+                                    color: '#9a7d83',
+
+                                    font: {
+
+                                        size: 10
+
+                                    }
+
+                                }
+
+                            },
+
+                            y: {
+
+                                beginAtZero: true,
+
+                                ticks: {
+
+                                    precision: 0,
+
+                                    color: '#9a7d83',
+
+                                    font: {
+
+                                        size: 10
+
+                                    }
+
+                                },
+
+                                grid: {
+
+                                    color:
+                                        'rgba(122,23,41,.07)'
+
+                                }
+
+                            }
+
+                        }
+
+                    }
+
+                }
+
+            );
+
+        }
+
+    }
+
+);
+
+</script>
+
+
 </body>
+
 </html>

@@ -1,0 +1,10 @@
+{
+  "name": "smk-pgri-2-ponorogo/perpus-api",
+  "description": "Aplikasi Data Buku Perpustakaan berbasis PHP Native, JSON API, CRUD, Login Admin dan Export Excel/PDF.",
+  "type": "project",
+  "require": {
+    "php": "^8.2",
+    "phpoffice/phpspreadsheet": "^2.3",
+    "dompdf/dompdf": "^3.1"
+  }
+}

@@ -1,642 +1,1484 @@
 <?php
-session_start();
 
-if (!isset($_SESSION['admin_login'])) {
-    header("Location: login.php");
-    exit;
-}
+require_once 'koneksi.php';
+require_once 'auth.php';
+
+requireLogin();
+
+$flash = $_SESSION['flash'] ?? null;
+unset($_SESSION['flash']);
+
 ?>
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data Buku — Admin Perpustakaan</title>
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Data Buku - Perpus API</title>
+
+    <link rel="stylesheet" href="style.css">
 
     <style>
-        .content-body .bk-page-header {
+
+        /* =====================================================
+           DATA BUKU PAGE
+        ====================================================== */
+
+        .books-page {
+            max-width: 100%;
+        }
+
+
+        /* =====================================================
+           PAGE HEADER
+        ====================================================== */
+
+        .books-header {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 14px;
-            margin-bottom: 22px;
-            animation: bkFadeUp .5s ease both;
+
+            gap: 25px;
+
+            margin-bottom: 25px;
         }
 
-        .content-body .bk-title {
-            font-size: 23px;
-            font-weight: 700;
-            background: linear-gradient(90deg, #4a0812, #8f1226, #c9184a);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .books-heading {
+            display: flex;
+            align-items: flex-start;
+
+            gap: 14px;
+        }
+
+        .books-heading-icon {
+            width: 48px;
+            height: 48px;
+
+            flex-shrink: 0;
+
             display: flex;
             align-items: center;
-            gap: 12px;
+            justify-content: center;
+
+            border-radius: 13px;
+
+            color: #7a1729;
+
+            background: #f9e4e8;
+
+            border: 1px solid #f0cfd6;
         }
 
-        .content-body .bk-title svg {
-            width: 27px;
-            height: 27px;
-            color: #8f1226;
-            -webkit-text-fill-color: #8f1226;
+        .books-heading-icon svg {
+            width: 23px;
+            height: 23px;
+            stroke-width: 1.8;
         }
 
-        .content-body .bk-title small {
-            display: block;
-            font-size: 12px;
-            font-weight: 500;
-            -webkit-text-fill-color: #a29294;
-            letter-spacing: .5px;
-            margin-top: 2px;
+        .books-heading h1 {
+            margin: 0 0 5px;
+
+            color: #431019;
+
+            font-size: 27px;
+            line-height: 1.2;
+
+            font-weight: 800;
+
+            letter-spacing: -.4px;
         }
 
-        .content-body .bk-btn-add {
+        .books-heading p {
+            margin: 0;
+
+            color: #92747b;
+
+            font-size: 13px;
+
+            line-height: 1.5;
+        }
+
+
+        /* =====================================================
+           HEADER ACTIONS
+        ====================================================== */
+
+        .books-actions {
+            display: flex;
+            align-items: center;
+
+            gap: 8px;
+
+            flex-wrap: wrap;
+        }
+
+        .books-action {
+            height: 40px;
+
             display: inline-flex;
             align-items: center;
-            gap: 9px;
-            background: linear-gradient(135deg, #c9184a, #8f1226);
-            color: #fff;
+            justify-content: center;
+
+            gap: 7px;
+
+            padding: 0 14px;
+
+            border-radius: 9px;
+
             text-decoration: none;
-            font-size: 13.5px;
-            font-weight: 600;
-            padding: 11px 20px;
-            border-radius: 12px;
-            box-shadow: 0 8px 18px rgba(143,18,38,.35);
-            transition: transform .25s, box-shadow .25s;
-            position: relative;
-            overflow: hidden;
+
+            font-size: 12px;
+            font-weight: 700;
+
+            transition: .2s ease;
         }
 
-        .content-body .bk-btn-add svg {
-            width: 17px;
-            height: 17px;
+        .books-action svg {
+            width: 16px;
+            height: 16px;
+
+            stroke-width: 2;
         }
 
-        .content-body .bk-btn-add:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 24px rgba(143,18,38,.45);
+        .books-action:hover {
+            transform: translateY(-1px);
         }
 
-        .content-body .bk-btn-add::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 60%;
-            height: 100%;
+        .books-action.excel {
+            color: #24734b;
+            background: #eaf7ef;
+            border: 1px solid #ccebd9;
+        }
+
+        .books-action.excel:hover {
+            background: #ddf2e6;
+        }
+
+        .books-action.pdf {
+            color: #7c2631;
+            background: #fbecef;
+            border: 1px solid #efd0d5;
+        }
+
+        .books-action.pdf:hover {
+            background: #f7e2e6;
+        }
+
+        .books-action.add {
+            color: white;
             background: linear-gradient(
-                120deg,
-                transparent,
-                rgba(255,255,255,.35),
-                transparent
+                135deg,
+                #661321,
+                #8f1d32
             );
-            transform: skewX(-20deg);
-            transition: left .5s;
+
+            border: 1px solid #661321;
+
+            box-shadow:
+                0 7px 16px rgba(102,19,33,.18);
         }
 
-        .content-body .bk-btn-add:hover::before {
-            left: 130%;
+        .books-action.add:hover {
+            box-shadow:
+                0 9px 20px rgba(102,19,33,.25);
         }
 
-        .content-body .bk-toolbar {
+
+        /* =====================================================
+           SUMMARY CARDS
+        ====================================================== */
+
+        .book-summary {
+            display: grid;
+
+            grid-template-columns:
+                repeat(3, minmax(0, 1fr));
+
+            gap: 14px;
+
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
             display: flex;
             align-items: center;
-            gap: 14px;
-            flex-wrap: wrap;
-            margin-bottom: 18px;
-            animation: bkFadeUp .5s .1s ease both;
+
+            gap: 13px;
+
+            padding: 17px;
+
+            background: #ffffff;
+
+            border: 1px solid #eee1e4;
+
+            border-radius: 13px;
+
+            box-shadow:
+                0 5px 18px rgba(70,12,24,.04);
         }
 
-        .content-body .bk-search {
+        .summary-icon {
+            width: 42px;
+            height: 42px;
+
+            flex-shrink: 0;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 11px;
+        }
+
+        .summary-icon svg {
+            width: 20px;
+            height: 20px;
+
+            stroke-width: 1.8;
+        }
+
+        .summary-icon.books {
+            color: #7b1729;
+            background: #fae7ea;
+        }
+
+        .summary-icon.category {
+            color: #8b5a19;
+            background: #fff4dc;
+        }
+
+        .summary-icon.api {
+            color: #356b8a;
+            background: #e8f3f8;
+        }
+
+        .summary-info {
+            min-width: 0;
+
+            display: flex;
+            flex-direction: column;
+
+            gap: 3px;
+        }
+
+        .summary-label {
+            color: #a08389;
+
+            font-size: 10px;
+
+            font-weight: 700;
+
+            text-transform: uppercase;
+
+            letter-spacing: .7px;
+        }
+
+        .summary-value {
+            color: #4a121b;
+
+            font-size: 20px;
+
+            line-height: 1;
+
+            font-weight: 800;
+        }
+
+
+        /* =====================================================
+           MAIN PANEL
+        ====================================================== */
+
+        .books-panel {
+            overflow: hidden;
+
+            padding: 0 !important;
+
+            background: #ffffff;
+
+            border: 1px solid #eee1e4;
+
+            border-radius: 15px;
+
+            box-shadow:
+                0 7px 25px rgba(70,12,24,.05);
+        }
+
+
+        /* =====================================================
+           TOOLBAR
+        ====================================================== */
+
+        .books-toolbar {
+            display: flex;
+            align-items: center;
+
+            gap: 10px;
+
+            padding: 17px;
+
+            background: #fff;
+
+            border-bottom: 1px solid #f0e5e7;
+        }
+
+        .books-search {
             position: relative;
+
             flex: 1;
+
             min-width: 240px;
-            max-width: 420px;
         }
 
-        .content-body .bk-search svg {
+        .books-search > svg {
             position: absolute;
+
             left: 14px;
             top: 50%;
-            transform: translateY(-50%);
+
             width: 17px;
             height: 17px;
-            color: #b09a9c;
+
+            transform: translateY(-50%);
+
+            color: #ad8d94;
+
             pointer-events: none;
-            transition: color .3s;
         }
 
-        .content-body .bk-search:focus-within svg {
-            color: #8f1226;
-        }
-
-        .content-body .bk-search input {
+        .books-search input {
             width: 100%;
-            padding: 12px 16px 12px 42px;
-            border: 1.5px solid #e6dcdc;
-            border-radius: 12px;
-            font-size: 13.5px;
-            font-family: inherit;
-            color: #2b0509;
-            background: #fff;
+            height: 42px;
+
+            padding: 0 14px 0 42px;
+
+            border: 1px solid #eadcdf;
+
+            border-radius: 9px;
+
             outline: none;
-            transition: border-color .3s, box-shadow .3s;
-        }
 
-        .content-body .bk-search input::placeholder {
-            color: #c2b2b4;
-        }
+            color: #4a151e;
 
-        .content-body .bk-search input:focus {
-            border-color: #8f1226;
-            box-shadow: 0 0 0 4px rgba(143,18,38,.12);
-        }
-
-        .content-body .bk-count {
-            font-size: 12.5px;
-            font-weight: 500;
-            color: #8f1226;
-            background: #fdf3f3;
-            border: 1px solid #f0dcdc;
-            padding: 8px 15px;
-            border-radius: 99px;
-            white-space: nowrap;
-        }
-
-        .content-body .bk-table-card {
             background: #fff;
-            border-radius: 16px;
-            border: 1px solid #f7ebeb;
-            box-shadow: 0 8px 24px rgba(74,8,18,.08);
-            overflow: hidden;
-            animation: bkFadeUp .5s .2s ease both;
+
+            font-family: inherit;
+
+            font-size: 12px;
+
+            transition: .2s ease;
         }
 
-        .content-body .bk-table-wrap {
+        .books-search input::placeholder {
+            color: #b9a4a9;
+        }
+
+        .books-search input:focus {
+            border-color: #9a3447;
+
+            box-shadow:
+                0 0 0 3px rgba(154,52,71,.08);
+        }
+
+        .books-filter {
+            height: 42px;
+
+            min-width: 150px;
+
+            padding: 0 34px 0 12px;
+
+            border: 1px solid #eadcdf;
+
+            border-radius: 9px;
+
+            outline: none;
+
+            color: #5b252d;
+
+            background-color: #fff;
+
+            font-family: inherit;
+
+            font-size: 12px;
+
+            cursor: pointer;
+        }
+
+        .books-filter:focus {
+            border-color: #9a3447;
+
+            box-shadow:
+                0 0 0 3px rgba(154,52,71,.08);
+        }
+
+        .refresh-button {
+            height: 42px;
+
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            gap: 7px;
+
+            padding: 0 13px;
+
+            border: 1px solid #eadcdf;
+
+            border-radius: 9px;
+
+            color: #6c444c;
+
+            background: #fff;
+
+            font-family: inherit;
+
+            font-size: 12px;
+
+            font-weight: 700;
+
+            cursor: pointer;
+
+            transition: .2s ease;
+        }
+
+        .refresh-button svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .refresh-button:hover {
+            color: #76182a;
+
+            background: #fff7f8;
+
+            border-color: #dfc2c8;
+        }
+
+
+        /* =====================================================
+           API STATUS
+        ====================================================== */
+
+        .books-status {
+            display: flex;
+            align-items: center;
+
+            gap: 8px;
+
+            min-height: 39px;
+
+            padding: 0 17px;
+
+            color: #9a7d83;
+
+            background: #fffafb;
+
+            border-bottom: 1px solid #f2e8ea;
+
+            font-size: 11px;
+        }
+
+        .books-status::before {
+            content: "";
+
+            width: 7px;
+            height: 7px;
+
+            flex-shrink: 0;
+
+            border-radius: 50%;
+
+            background: #c9adb3;
+        }
+
+        .books-status.success {
+            color: #4d7960;
+        }
+
+        .books-status.success::before {
+            background: #55a874;
+
+            box-shadow:
+                0 0 0 3px rgba(85,168,116,.11);
+        }
+
+        .books-status.error {
+            color: #a03c4d;
+        }
+
+        .books-status.error::before {
+            background: #bd4358;
+
+            box-shadow:
+                0 0 0 3px rgba(189,67,88,.1);
+        }
+
+
+        /* =====================================================
+           TABLE
+        ====================================================== */
+
+        .books-table-wrap {
             overflow-x: auto;
         }
 
-        .content-body table.bk-table {
+        .books-table {
             width: 100%;
+
             border-collapse: collapse;
-            min-width: 950px;
-            font-size: 13.5px;
+
+            min-width: 1050px;
         }
 
-        .content-body .bk-table thead th {
-            background: linear-gradient(135deg, #8f1226, #5c0a14);
-            color: #fff;
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            padding: 15px 16px;
+        .books-table thead th {
+            height: 45px;
+
+            padding: 0 14px;
+
+            color: #896a72;
+
+            background: #fffafb;
+
+            border-bottom: 1px solid #eee1e4;
+
+            font-size: 10px;
+
+            font-weight: 800;
+
             text-align: left;
+
+            text-transform: uppercase;
+
+            letter-spacing: .65px;
+
             white-space: nowrap;
         }
 
-        .content-body .bk-table thead th:first-child {
-            padding-left: 20px;
-        }
+        .books-table tbody td {
+            padding: 13px 14px;
 
-        .content-body .bk-table tbody td {
-            padding: 14px 16px;
-            border-bottom: 1px solid #f7ebeb;
-            color: #4a3f40;
+            color: #68434b;
+
+            border-bottom: 1px solid #f2e9eb;
+
+            font-size: 12px;
+
             vertical-align: middle;
         }
 
-        .content-body .bk-table tbody td:first-child {
-            padding-left: 20px;
+        .books-table tbody tr {
+            transition: .15s ease;
         }
 
-        .content-body .bk-table tbody tr {
-            transition: background .2s;
-            animation: bkRowIn .45s ease both;
+        .books-table tbody tr:hover {
+            background: #fffafb;
         }
 
-        .content-body .bk-table tbody tr:hover {
-            background: #fdf5f6;
-        }
-
-        .content-body .bk-table tbody tr:last-child td {
+        .books-table tbody tr:last-child td {
             border-bottom: none;
         }
 
-        /* COVER */
-        .content-body .bk-cover-img {
-            width: 48px;
-            height: 68px;
-            object-fit: cover;
-            border-radius: 6px;
-            box-shadow: 0 3px 8px rgba(0,0,0,.15);
-            display: block;
-            background: #faf0f0;
-        }
 
-        .content-body .bk-no-cover {
-            width: 48px;
-            height: 68px;
-            border-radius: 6px;
-            background: #fdf3f3;
-            border: 1px dashed #e3c8c8;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #b09a9c;
-            font-size: 10px;
-            font-weight: 600;
-            text-align: center;
-        }
+        /* =====================================================
+           ID
+        ====================================================== */
 
-        .content-body .bk-no {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 28px;
-            height: 28px;
-            border-radius: 99px;
-            background: #fdf3f3;
-            color: #8f1226;
-            font-size: 12px;
-            font-weight: 600;
-        }
+        .book-id {
+            color: #a2848b;
 
-        .content-body .bk-kode {
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 12px;
-            font-weight: 600;
-            color: #5c0a14;
-            background: #faf0f0;
-            border: 1px dashed #e3c8c8;
-            padding: 4px 10px;
-            border-radius: 8px;
-            white-space: nowrap;
-        }
+            font-size: 11px;
 
-        .content-body .bk-judul {
-            font-weight: 600;
-            color: #2b0509;
-            max-width: 200px;
-        }
-
-        .content-body .bk-penulis {
-            color: #6b5b5d;
-        }
-
-        .content-body .bk-kategori {
-            display: inline-block;
-            font-size: 11.5px;
-            font-weight: 600;
-            padding: 5px 12px;
-            border-radius: 99px;
-            white-space: nowrap;
-        }
-
-        .bk-kat-0 {
-            background: #fde8ee;
-            color: #a4133c;
-        }
-
-        .bk-kat-1 {
-            background: #fdf3dd;
-            color: #9a6b0f;
-        }
-
-        .bk-kat-2 {
-            background: #e5f3ec;
-            color: #1e6b3a;
-        }
-
-        .bk-kat-3 {
-            background: #e8eefb;
-            color: #3b5bab;
-        }
-
-        .bk-kat-4 {
-            background: #f4ecfb;
-            color: #7a3ba8;
-        }
-
-        .bk-kat-5 {
-            background: #fef0e7;
-            color: #b05a1f;
-        }
-
-        .content-body .bk-tahun {
-            display: inline-block;
-            font-size: 12.5px;
-            font-weight: 500;
-            color: #6b5b5d;
-            background: #f7f2f2;
-            padding: 4px 11px;
-            border-radius: 8px;
-        }
-
-        .content-body .bk-stok {
-            display: inline-block;
-            font-size: 12px;
             font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 8px;
-            text-align: center;
-        }
 
-        .bk-stok-ada {
-            background: #e5f3ec;
-            color: #1e6b3a;
-        }
-
-        .bk-stok-habis {
-            background: #fde8ee;
-            color: #a4133c;
-        }
-
-        .content-body .bk-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .content-body .bk-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 7px 13px;
-            border-radius: 99px;
-            font-size: 12px;
-            font-weight: 600;
-            text-decoration: none;
-            transition: transform .2s, box-shadow .2s, filter .2s;
             white-space: nowrap;
         }
 
-        .content-body .bk-btn svg {
-            width: 13.5px;
-            height: 13.5px;
+
+        /* =====================================================
+           COVER
+        ====================================================== */
+
+        .cover-wrapper {
+            width: 43px;
+            height: 57px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            overflow: hidden;
+
+            border-radius: 7px;
+
+            background:
+                linear-gradient(
+                    145deg,
+                    #f7e0e4,
+                    #f2cbd2
+                );
+
+            border: 1px solid #ecd0d5;
+
+            box-shadow:
+                0 4px 9px rgba(80,12,25,.08);
         }
 
-        .content-body .bk-btn:hover {
-            transform: translateY(-2px);
-            filter: brightness(1.06);
+        .table-cover {
+            width: 100%;
+            height: 100%;
+
+            display: block;
+
+            object-fit: cover;
         }
 
-        .content-body .bk-btn:active {
-            transform: translateY(0) scale(.97);
+        .cover-placeholder {
+            width: 100%;
+            height: 100%;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            color: #8c394a;
         }
 
-        .content-body .bk-btn-edit {
-            background: linear-gradient(135deg, #e9c46a, #d4a13d);
-            color: #4a3208;
-            box-shadow: 0 4px 10px rgba(212,161,61,.35);
+        .cover-placeholder svg {
+            width: 19px;
+            height: 19px;
+
+            stroke-width: 1.7;
         }
 
-        .content-body .bk-btn-hapus {
-            background: linear-gradient(135deg, #d93025, #a61b1b);
-            color: #fff;
-            box-shadow: 0 4px 10px rgba(166,27,27,.35);
-        }
 
-        .content-body .bk-status {
-            padding: 56px 20px;
-            text-align: center;
-            color: #8a7f80;
-        }
+        /* =====================================================
+           BOOK CODE
+        ====================================================== */
 
-        .content-body .bk-status svg {
-            width: 44px;
-            height: 44px;
-            color: #d8bfc2;
-            margin-bottom: 12px;
-        }
-
-        .content-body .bk-status p {
-            font-size: 14px;
-            margin-bottom: 4px;
-        }
-
-        .content-body .bk-status small {
-            font-size: 12.5px;
-            color: #b09a9c;
-        }
-
-        .content-body .bk-status.bk-error svg {
-            color: #d93025;
-        }
-
-        .content-body .bk-status.bk-error p {
-            color: #b3261e;
-            font-weight: 600;
-        }
-
-        .content-body .bk-btn-retry {
+        .book-code {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            margin-top: 16px;
-            padding: 10px 20px;
-            background: linear-gradient(135deg, #c9184a, #8f1226);
-            color: #fff;
-            border: none;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 600;
-            font-family: inherit;
+
+            padding: 5px 8px;
+
+            border-radius: 6px;
+
+            color: #7d2636;
+
+            background: #fbecef;
+
+            border: 1px solid #f0d4d9;
+
+            font-family: monospace;
+
+            font-size: 10px;
+
+            font-weight: 700;
+
+            white-space: nowrap;
+        }
+
+
+        /* =====================================================
+           BOOK TITLE
+        ====================================================== */
+
+        .book-title {
+            min-width: 190px;
+
+            color: #48141d;
+
+            font-size: 12px;
+
+            line-height: 1.5;
+
+            font-weight: 750;
+        }
+
+
+        /* =====================================================
+           CATEGORY
+        ====================================================== */
+
+        .category-badge {
+            display: inline-flex;
+
+            align-items: center;
+
+            padding: 5px 9px;
+
+            border-radius: 20px;
+
+            color: #75404a;
+
+            background: #f8f0f1;
+
+            border: 1px solid #ecdee1;
+
+            font-size: 10px;
+
+            font-weight: 700;
+
+            white-space: nowrap;
+        }
+
+
+        /* =====================================================
+           YEAR
+        ====================================================== */
+
+        .book-year {
+            color: #68434b;
+
+            font-weight: 700;
+
+            white-space: nowrap;
+        }
+
+
+        /* =====================================================
+           ACTION
+        ====================================================== */
+
+        .book-actions {
+            display: flex;
+            align-items: center;
+
+            gap: 6px;
+        }
+
+        .book-actions form {
+            margin: 0;
+            padding: 0;
+        }
+
+        .book-action {
+            width: 32px;
+            height: 32px;
+
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 8px;
+
+            text-decoration: none;
+
+            border: 1px solid transparent;
+
             cursor: pointer;
-            box-shadow: 0 6px 14px rgba(143,18,38,.35);
-            transition: transform .2s;
+
+            transition: .18s ease;
         }
 
-        .content-body .bk-btn-retry:hover {
-            transform: translateY(-2px);
-        }
-
-        .content-body .bk-btn-retry svg {
+        .book-action svg {
             width: 15px;
             height: 15px;
-            color: #fff;
+
+            stroke-width: 1.9;
         }
 
-        .content-body .bk-spinner {
-            width: 34px;
-            height: 34px;
-            margin: 0 auto 14px;
-            border: 3px solid #f3dede;
-            border-top-color: #8f1226;
-            border-radius: 50%;
-            animation: bkSpin .8s linear infinite;
+        .book-action.edit {
+            color: #87611f;
+
+            background: #fff5df;
+
+            border-color: #f2dfb7;
         }
 
-        @keyframes bkSpin {
-            to {
-                transform: rotate(360deg);
-            }
+        .book-action.edit:hover {
+            color: #6c4a10;
+
+            background: #ffedc5;
         }
 
-        @keyframes bkFadeUp {
-            from {
-                opacity: 0;
-                transform: translateY(16px);
-            }
+        .book-action.delete {
+            color: #a0374a;
 
-            to {
-                opacity: 1;
-                transform: none;
-            }
+            background: #fff0f2;
+
+            border-color: #f1d4d9;
         }
 
-        @keyframes bkRowIn {
-            from {
-                opacity: 0;
-                transform: translateX(-10px);
-            }
+        .book-action.delete:hover {
+            color: #8a2337;
 
-            to {
-                opacity: 1;
-                transform: none;
-            }
+            background: #fbe0e4;
         }
 
-        @media (max-width: 640px) {
-            .content-body .bk-title {
-                font-size: 19px;
+
+        /* =====================================================
+           EMPTY
+        ====================================================== */
+
+        .books-empty {
+            padding: 55px 20px !important;
+
+            color: #a4878e !important;
+
+            text-align: center;
+
+            font-size: 12px !important;
+        }
+
+        .empty-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            flex-direction: column;
+
+            gap: 9px;
+        }
+
+        .empty-icon {
+            width: 42px;
+            height: 42px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 12px;
+
+            color: #a87580;
+
+            background: #f9edef;
+        }
+
+        .empty-icon svg {
+            width: 20px;
+            height: 20px;
+        }
+
+
+        /* =====================================================
+           FLASH MESSAGE
+        ====================================================== */
+
+        .books-alert {
+            display: flex;
+            align-items: center;
+
+            gap: 9px;
+
+            margin-bottom: 18px;
+
+            padding: 12px 15px;
+
+            border-radius: 9px;
+
+            font-size: 12px;
+
+            font-weight: 600;
+        }
+
+        .books-alert.success {
+            color: #3f7655;
+
+            background: #eef9f2;
+
+            border: 1px solid #d3eddd;
+        }
+
+        .books-alert.danger {
+            color: #a03649;
+
+            background: #fff0f2;
+
+            border: 1px solid #efd3d8;
+        }
+
+        .books-alert svg {
+            width: 17px;
+            height: 17px;
+        }
+
+
+        /* =====================================================
+           PAGINATION
+        ====================================================== */
+
+        .books-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+
+            gap: 15px;
+
+            padding: 14px 17px;
+
+            background: #ffffff;
+
+            border-top: 1px solid #eee1e4;
+        }
+
+        .pagination-info {
+            color: #9a7d83;
+
+            font-size: 11px;
+
+            line-height: 1.5;
+
+            white-space: nowrap;
+        }
+
+        .pagination-info strong {
+            color: #6d3943;
+
+            font-weight: 800;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+
+            gap: 5px;
+        }
+
+        .pagination-button {
+            min-width: 32px;
+            height: 32px;
+
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            padding: 0 9px;
+
+            border: 1px solid #eadcdf;
+
+            border-radius: 8px;
+
+            color: #70424c;
+
+            background: #ffffff;
+
+            font-family: inherit;
+
+            font-size: 11px;
+
+            font-weight: 700;
+
+            cursor: pointer;
+
+            transition: .18s ease;
+        }
+
+        .pagination-button svg {
+            width: 14px;
+            height: 14px;
+
+            stroke-width: 2;
+        }
+
+        .pagination-button:hover:not(:disabled) {
+            color: #76182a;
+
+            background: #fff5f7;
+
+            border-color: #dcb8c0;
+        }
+
+        .pagination-button.active {
+            color: #ffffff;
+
+            background: linear-gradient(
+                135deg,
+                #661321,
+                #8f1d32
+            );
+
+            border-color: #661321;
+
+            box-shadow:
+                0 4px 10px rgba(102,19,33,.16);
+        }
+
+        .pagination-button:disabled {
+            color: #c4b0b5;
+
+            background: #faf8f8;
+
+            cursor: not-allowed;
+
+            opacity: .7;
+        }
+
+        .pagination-dots {
+            min-width: 25px;
+
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            color: #a98c92;
+
+            font-size: 12px;
+        }
+
+
+        /* =====================================================
+           RESPONSIVE
+        ====================================================== */
+
+        @media (max-width: 1100px) {
+
+            .books-header {
+                flex-direction: column;
             }
 
-            .content-body .bk-btn-add {
+            .books-actions {
+                width: 100%;
+            }
+
+        }
+
+
+        @media (max-width: 850px) {
+
+            .book-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .books-toolbar {
+                flex-wrap: wrap;
+            }
+
+            .books-search {
+                width: 100%;
+                flex-basis: 100%;
+            }
+
+            .books-pagination {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .pagination-controls {
                 width: 100%;
                 justify-content: center;
             }
+
         }
+
+
+        @media (max-width: 600px) {
+
+            .books-heading h1 {
+                font-size: 23px;
+            }
+
+            .books-heading-icon {
+                width: 43px;
+                height: 43px;
+            }
+
+            .books-actions {
+                display: grid;
+
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .books-action.add {
+                grid-column: 1 / -1;
+            }
+
+            .books-filter {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .pagination-info {
+                width: 100%;
+
+                text-align: center;
+
+                white-space: normal;
+            }
+
+            .pagination-controls {
+                gap: 3px;
+            }
+
+            .pagination-button {
+                min-width: 30px;
+                height: 30px;
+
+                padding: 0 7px;
+            }
+
+        }
+
     </style>
+
 </head>
+
 
 <body>
 
-<div class="app-layout">
+
+<div class="app">
 
     <?php include 'sidebar.php'; ?>
 
-    <div class="main-content">
 
-        <?php include 'topbar.php'; ?>
+    <main class="main-content">
 
-        <div class="content-body">
-
-            <div class="bk-page-header">
-
-                <h2 class="bk-title">
-
-                    <svg viewBox="0 0 24 24"
-                         fill="none"
-                         stroke="currentColor"
-                         stroke-width="2"
-                         stroke-linecap="round"
-                         stroke-linejoin="round">
-
-                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-
-                    </svg>
-
-                    <span>
-                        Data Buku Perpustakaan
-                        <small>
-                            Kelola koleksi buku — tambah, ubah, dan hapus data
-                        </small>
-                    </span>
-
-                </h2>
-
-                <a href="tambah.php" class="bk-btn-add">
-
-                    <svg viewBox="0 0 24 24"
-                         fill="none"
-                         stroke="currentColor"
-                         stroke-width="2.5"
-                         stroke-linecap="round"
-                         stroke-linejoin="round">
-
-                        <line x1="12" y1="5" x2="12" y2="19"/>
-                        <line x1="5" y1="12" x2="19" y2="12"/>
-
-                    </svg>
-
-                    Tambah Buku
-
-                </a>
-
-            </div>
+        <div class="books-page">
 
 
-            <div class="bk-toolbar">
+            <!-- =================================================
+                 HEADER
+            ================================================== -->
 
-                <div class="bk-search">
+            <div class="books-header">
 
-                    <svg viewBox="0 0 24 24"
-                         fill="none"
-                         stroke="currentColor"
-                         stroke-width="2"
-                         stroke-linecap="round"
-                         stroke-linejoin="round">
+                <div class="books-heading">
 
-                        <circle cx="11" cy="11" r="8"/>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    <div class="books-heading-icon">
 
-                    </svg>
+                        <i data-lucide="book-open"></i>
 
-                    <input
-                        type="text"
-                        id="bkCari"
-                        placeholder="Cari judul, penulis, kategori, kode..."
-                        autocomplete="off"
-                    >
+                    </div>
+
+                    <div>
+
+                        <h1>
+                            Data Buku
+                        </h1>
+
+                        <p>
+                            Kelola dan pantau seluruh koleksi buku
+                            perpustakaan melalui JSON API.
+                        </p>
+
+                    </div>
 
                 </div>
 
-                <span class="bk-count" id="bkCount">
-                    Memuat...
-                </span>
+
+                <div class="books-actions">
+
+                    <a
+                        href="export_excel.php"
+                        class="books-action excel"
+                    >
+
+                        <i data-lucide="file-spreadsheet"></i>
+
+                        Export Excel
+
+                    </a>
+
+
+                    <a
+                        href="export_pdf.php"
+                        class="books-action pdf"
+                    >
+
+                        <i data-lucide="file-text"></i>
+
+                        Export PDF
+
+                    </a>
+
+
+                    <a
+                        href="tambah.php"
+                        class="books-action add"
+                    >
+
+                        <i data-lucide="plus"></i>
+
+                        Tambah Buku
+
+                    </a>
+
+                </div>
 
             </div>
 
 
-            <div class="bk-table-card">
+            <!-- =================================================
+                 FLASH MESSAGE
+            ================================================== -->
 
-                <div class="bk-table-wrap">
+            <?php if ($flash): ?>
 
-                    <table class="bk-table">
+                <div
+                    class="books-alert <?= $flash['type'] === 'success' ? 'success' : 'danger' ?>"
+                >
+
+                    <?php if ($flash['type'] === 'success'): ?>
+
+                        <i data-lucide="circle-check"></i>
+
+                    <?php else: ?>
+
+                        <i data-lucide="circle-alert"></i>
+
+                    <?php endif; ?>
+
+
+                    <span>
+                        <?= e($flash['message']) ?>
+                    </span>
+
+                </div>
+
+            <?php endif; ?>
+
+
+            <!-- =================================================
+                 SUMMARY
+            ================================================== -->
+
+            <div class="book-summary">
+
+
+                <div class="summary-card">
+
+                    <div class="summary-icon books">
+
+                        <i data-lucide="library"></i>
+
+                    </div>
+
+                    <div class="summary-info">
+
+                        <span class="summary-label">
+                            Total Buku
+                        </span>
+
+                        <span
+                            class="summary-value"
+                            id="totalBooks"
+                        >
+                            -
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="summary-card">
+
+                    <div class="summary-icon category">
+
+                        <i data-lucide="tags"></i>
+
+                    </div>
+
+                    <div class="summary-info">
+
+                        <span class="summary-label">
+                            Kategori
+                        </span>
+
+                        <span
+                            class="summary-value"
+                            id="totalCategories"
+                        >
+                            -
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="summary-card">
+
+                    <div class="summary-icon api">
+
+                        <i data-lucide="radio"></i>
+
+                    </div>
+
+                    <div class="summary-info">
+
+                        <span class="summary-label">
+                            Status API
+                        </span>
+
+                        <span
+                            class="summary-value"
+                            id="apiSummary"
+                            style="font-size:15px;"
+                        >
+                            Memuat...
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+            </div>
+
+
+            <!-- =================================================
+                 TABLE PANEL
+            ================================================== -->
+
+            <section class="panel books-panel">
+
+
+                <!-- TOOLBAR -->
+
+                <div class="books-toolbar">
+
+
+                    <div class="books-search">
+
+                        <i data-lucide="search"></i>
+
+                        <input
+                            type="text"
+                            id="searchInput"
+                            placeholder="Cari judul, kode, penulis, kategori..."
+                        >
+
+                    </div>
+
+
+                    <select
+                        id="categoryFilter"
+                        class="books-filter"
+                    >
+
+                        <option value="">
+                            Semua Kategori
+                        </option>
+
+                    </select>
+
+
+                    <select
+                        id="yearSort"
+                        class="books-filter"
+                    >
+
+                        <option value="">
+                            Urutan Tahun
+                        </option>
+
+                        <option value="desc">
+                            Terbaru → Terlama
+                        </option>
+
+                        <option value="asc">
+                            Terlama → Terbaru
+                        </option>
+
+                    </select>
+
+
+                    <button
+                        type="button"
+                        class="refresh-button"
+                        id="refreshBtn"
+                    >
+
+                        <i data-lucide="refresh-cw"></i>
+
+                        Refresh
+
+                    </button>
+
+
+                </div>
+
+
+                <!-- API STATUS -->
+
+                <div
+                    id="apiStatus"
+                    class="books-status"
+                >
+                    Memuat data dari API...
+                </div>
+
+
+                <!-- TABLE -->
+
+                <div class="books-table-wrap">
+
+                    <table class="books-table">
 
                         <thead>
 
                             <tr>
-                                <th>No</th>
-                                <th>Cover</th>
-                                <th>Kode Buku</th>
-                                <th>Judul</th>
-                                <th>Penulis</th>
-                                <th>Kategori</th>
-                                <th>Tahun</th>
-                                <th>Penerbit</th>
-                                <th>Stok</th>
-                                <th>Aksi</th>
+
+                                <th>
+                                    ID
+                                </th>
+
+                                <th>
+                                    SAMPUL
+                                </th>
+
+                                <th>
+                                    KODE
+                                </th>
+
+                                <th>
+                                    JUDUL
+                                </th>
+
+                                <th>
+                                    PENULIS
+                                </th>
+
+                                <th>
+                                    KATEGORI
+                                </th>
+
+                                <th>
+                                    TAHUN
+                                </th>
+
+                                <th>
+                                    PENERBIT
+                                </th>
+
+                                <th>
+                                    AKSI
+                                </th>
+
                             </tr>
 
                         </thead>
 
-                        <tbody id="buku-table-body">
+
+                        <tbody id="bookTableBody">
 
                             <tr>
 
-                                <td colspan="10">
+                                <td
+                                    colspan="9"
+                                    class="books-empty"
+                                >
 
-                                    <div class="bk-status">
+                                    <div class="empty-content">
 
-                                        <div class="bk-spinner"></div>
+                                        <div class="empty-icon">
 
-                                        <p>
-                                            Memuat data dari API...
-                                        </p>
+                                            <i data-lucide="loader-circle"></i>
+
+                                        </div>
+
+                                        <span>
+                                            Memuat data buku...
+                                        </span>
 
                                     </div>
 
@@ -650,256 +1492,636 @@ if (!isset($_SESSION['admin_login'])) {
 
                 </div>
 
-            </div>
+
+                <!-- =================================================
+                     PAGINATION
+                ================================================== -->
+
+                <div
+                    class="books-pagination"
+                    id="paginationContainer"
+                >
+
+                    <div
+                        class="pagination-info"
+                        id="paginationInfo"
+                    >
+                        Menampilkan 0 data
+                    </div>
+
+                    <div
+                        class="pagination-controls"
+                        id="paginationControls"
+                    >
+                    </div>
+
+                </div>
+
+
+            </section>
 
         </div>
 
-    </div>
+    </main>
 
 </div>
 
 
+<!-- =========================================================
+     LUCIDE
+========================================================== -->
+
+<script src="https://unpkg.com/lucide@latest"></script>
+
+
 <script>
 
-function escapeHtml(str) {
-
-    return String(str ?? '').replace(/[&<>"']/g, function(s) {
-
-        return {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#39;'
-        }[s];
-
-    });
-
-}
+const API_URL = 'data_json.php';
 
 
-function escapeJsParam(str) {
+// ======================================================
+// PAGINATION CONFIG
+// ======================================================
 
-    return String(str ?? '')
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'");
+const ITEMS_PER_PAGE = 8;
 
-}
+let currentPage = 1;
+
+let allBooks = [];
 
 
-function kategoriClass(nama) {
+// ======================================================
+// ELEMENT
+// ======================================================
 
-    let hash = 0;
+const body =
+    document.getElementById('bookTableBody');
 
-    const strNama = String(nama ?? 'Umum');
+const statusBox =
+    document.getElementById('apiStatus');
 
-    for (let i = 0; i < strNama.length; i++) {
+const searchInput =
+    document.getElementById('searchInput');
 
-        hash = (hash * 31 + strNama.charCodeAt(i)) >>> 0;
+const categoryFilter =
+    document.getElementById('categoryFilter');
+
+const yearSort =
+    document.getElementById('yearSort');
+
+const refreshBtn =
+    document.getElementById('refreshBtn');
+
+const totalBooks =
+    document.getElementById('totalBooks');
+
+const totalCategories =
+    document.getElementById('totalCategories');
+
+const apiSummary =
+    document.getElementById('apiSummary');
+
+const paginationInfo =
+    document.getElementById('paginationInfo');
+
+const paginationControls =
+    document.getElementById('paginationControls');
+
+
+// ======================================================
+// LUCIDE
+// ======================================================
+
+function refreshIcons() {
+
+    if (typeof lucide !== 'undefined') {
+
+        lucide.createIcons();
 
     }
 
-    return 'bk-kat-' + (hash % 6);
+}
+
+
+// ======================================================
+// ESCAPE HTML
+// ======================================================
+
+function escapeHtml(value) {
+
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
 
 }
 
 
-const ICON_EDIT = `
-<svg viewBox="0 0 24 24"
-     fill="none"
-     stroke="currentColor"
-     stroke-width="2"
-     stroke-linecap="round"
-     stroke-linejoin="round">
+// ======================================================
+// COVER
+// ======================================================
 
-    <path d="M12 20h9"/>
-    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+function createCover(book) {
 
-</svg>`;
+    if (book.gambar) {
 
+        return `
+            <div class="cover-wrapper">
 
-const ICON_TRASH = `
-<svg viewBox="0 0 24 24"
-     fill="none"
-     stroke="currentColor"
-     stroke-width="2"
-     stroke-linecap="round"
-     stroke-linejoin="round">
+                <img
+                    src="${escapeHtml(book.gambar)}"
+                    alt="Sampul ${escapeHtml(book.judul)}"
+                    class="table-cover"
+                    onerror="this.parentElement.innerHTML='<div class=&quot;cover-placeholder&quot;><i data-lucide=&quot;book-open&quot;></i></div>'; refreshIcons();"
+                >
 
-    <polyline points="3 6 5 6 21 6"/>
-    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </div>
+        `;
 
-</svg>`;
+    }
 
 
-const ICON_RETRY = `
-<svg viewBox="0 0 24 24"
-     fill="none"
-     stroke="currentColor"
-     stroke-width="2"
-     stroke-linecap="round"
-     stroke-linejoin="round">
+    return `
+        <div class="cover-wrapper">
 
-    <polyline points="23 4 23 10 17 10"/>
-    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            <div class="cover-placeholder">
 
-</svg>`;
+                <i data-lucide="book-open"></i>
 
+            </div>
 
-let semuaBuku = [];
-
-
-/* =========================================================
-   LOAD DATA API
-========================================================= */
-
-function loadBuku() {
-
-    const tbody = document.getElementById('buku-table-body');
-
-    tbody.innerHTML = `
-        <tr>
-            <td colspan="10">
-
-                <div class="bk-status">
-
-                    <div class="bk-spinner"></div>
-
-                    <p>Memuat data dari API...</p>
-
-                </div>
-
-            </td>
-        </tr>
+        </div>
     `;
 
+}
 
-    fetch("data_json.php")
 
-        .then(response => {
+// ======================================================
+// FILTER + SORT DATA
+// ======================================================
 
-            if (!response.ok) {
+function getFilteredBooks() {
 
-                throw new Error(
-                    "Gagal mengambil data HTTP " + response.status
-                );
+    const search =
+        searchInput.value
+            .toLowerCase()
+            .trim();
 
-            }
+    const category =
+        categoryFilter.value;
 
-            return response.json();
+    const sort =
+        yearSort.value;
 
-        })
 
-        .then(data => {
+    let data =
+        allBooks.filter(book => {
 
-            semuaBuku = Array.isArray(data) ? data : [];
+            const haystack = [
 
-            renderTabel(semuaBuku);
+                book.kode_buku,
+                book.judul,
+                book.penulis,
+                book.kategori,
+                book.tahun_terbit,
+                book.penerbit
 
-        })
+            ]
+            .join(' ')
+            .toLowerCase();
 
-        .catch(error => {
 
-            console.error("Error fetching API:", error);
-
-            tbody.innerHTML = `
-
-                <tr>
-
-                    <td colspan="10">
-
-                        <div class="bk-status bk-error">
-
-                            <svg viewBox="0 0 24 24"
-                                 fill="none"
-                                 stroke="currentColor"
-                                 stroke-width="2"
-                                 stroke-linecap="round"
-                                 stroke-linejoin="round">
-
-                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-
-                                <line x1="12" y1="9" x2="12" y2="13"/>
-
-                                <line x1="12" y1="17" x2="12.01" y2="17"/>
-
-                            </svg>
-
-                            <p>Gagal memuat data dari API.</p>
-
-                            <small>
-                                Periksa koneksi atau pastikan endpoint API valid.
-                            </small>
-
-                            <br>
-
-                            <button
-                                type="button"
-                                class="bk-btn-retry"
-                                onclick="loadBuku()">
-
-                                ${ICON_RETRY}
-
-                                Coba Lagi
-
-                            </button>
-
-                        </div>
-
-                    </td>
-
-                </tr>
-
-            `;
-
-            document.getElementById('bkCount').textContent = '0 buku';
+            return (
+                haystack.includes(search)
+                &&
+                (
+                    !category
+                    ||
+                    book.kategori === category
+                )
+            );
 
         });
 
+
+    // ==================================================
+    // SORT TAHUN
+    // ==================================================
+
+    if (sort === 'asc') {
+
+        data.sort(
+            (a, b) =>
+                Number(a.tahun_terbit)
+                -
+                Number(b.tahun_terbit)
+        );
+
+    }
+
+
+    if (sort === 'desc') {
+
+        data.sort(
+            (a, b) =>
+                Number(b.tahun_terbit)
+                -
+                Number(a.tahun_terbit)
+        );
+
+    }
+
+
+    return data;
+
 }
 
 
-/* =========================================================
-   RENDER TABEL
-========================================================= */
+// ======================================================
+// RENDER PAGINATION
+// ======================================================
 
-function renderTabel(data) {
+function renderPagination(totalItems) {
 
-    const tbody = document.getElementById('buku-table-body');
-
-
-    if (data.length === 0) {
-
-        const keyword =
-            document.getElementById('bkCari').value.trim();
+    const totalPages =
+        Math.ceil(totalItems / ITEMS_PER_PAGE);
 
 
-        tbody.innerHTML = `
+    paginationControls.innerHTML = '';
+
+
+    // Tidak perlu pagination kalau data <= 8
+    if (totalPages <= 1) {
+
+        paginationInfo.innerHTML =
+            totalItems > 0
+                ? `Menampilkan <strong>${totalItems}</strong> data buku`
+                : 'Tidak ada data buku';
+
+        return;
+
+    }
+
+
+    // ==================================================
+    // INFO
+    // ==================================================
+
+    const start =
+        ((currentPage - 1) * ITEMS_PER_PAGE) + 1;
+
+    const end =
+        Math.min(
+            currentPage * ITEMS_PER_PAGE,
+            totalItems
+        );
+
+
+    paginationInfo.innerHTML = `
+        Menampilkan
+        <strong>${start}–${end}</strong>
+        dari
+        <strong>${totalItems}</strong>
+        buku
+    `;
+
+
+    // ==================================================
+    // BUTTON SEBELUMNYA
+    // ==================================================
+
+    const previousButton =
+        document.createElement('button');
+
+    previousButton.type = 'button';
+
+    previousButton.className =
+        'pagination-button';
+
+    previousButton.innerHTML =
+        '<i data-lucide="chevron-left"></i>';
+
+    previousButton.title =
+        'Halaman sebelumnya';
+
+    previousButton.disabled =
+        currentPage === 1;
+
+    previousButton.addEventListener(
+        'click',
+        function () {
+
+            if (currentPage > 1) {
+
+                currentPage--;
+
+                renderBooks();
+
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+
+            }
+
+        }
+    );
+
+    paginationControls.appendChild(
+        previousButton
+    );
+
+
+    // ==================================================
+    // NOMOR HALAMAN
+    // ==================================================
+
+    const pages =
+        getPaginationPages(
+            currentPage,
+            totalPages
+        );
+
+
+    pages.forEach(page => {
+
+        if (page === 'dots') {
+
+            const dots =
+                document.createElement('span');
+
+            dots.className =
+                'pagination-dots';
+
+            dots.textContent =
+                '•••';
+
+            paginationControls.appendChild(
+                dots
+            );
+
+            return;
+
+        }
+
+
+        const pageButton =
+            document.createElement('button');
+
+        pageButton.type = 'button';
+
+        pageButton.className =
+            'pagination-button'
+            +
+            (
+                page === currentPage
+                    ? ' active'
+                    : ''
+            );
+
+        pageButton.textContent =
+            page;
+
+        pageButton.addEventListener(
+            'click',
+            function () {
+
+                currentPage =
+                    page;
+
+                renderBooks();
+
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+
+            }
+        );
+
+        paginationControls.appendChild(
+            pageButton
+        );
+
+    });
+
+
+    // ==================================================
+    // BUTTON BERIKUTNYA
+    // ==================================================
+
+    const nextButton =
+        document.createElement('button');
+
+    nextButton.type = 'button';
+
+    nextButton.className =
+        'pagination-button';
+
+    nextButton.innerHTML =
+        '<i data-lucide="chevron-right"></i>';
+
+    nextButton.title =
+        'Halaman berikutnya';
+
+    nextButton.disabled =
+        currentPage === totalPages;
+
+    nextButton.addEventListener(
+        'click',
+        function () {
+
+            if (currentPage < totalPages) {
+
+                currentPage++;
+
+                renderBooks();
+
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+
+            }
+
+        }
+    );
+
+    paginationControls.appendChild(
+        nextButton
+    );
+
+
+    refreshIcons();
+
+}
+
+
+// ======================================================
+// GENERATE NOMOR PAGINATION
+// ======================================================
+
+function getPaginationPages(current, total) {
+
+    const pages = [];
+
+
+    // Jika halaman sedikit
+    if (total <= 7) {
+
+        for (
+            let i = 1;
+            i <= total;
+            i++
+        ) {
+
+            pages.push(i);
+
+        }
+
+        return pages;
+
+    }
+
+
+    // Halaman awal
+    pages.push(1);
+
+
+    // ==================================================
+    // CURRENT DEKAT AWAL
+    // ==================================================
+
+    if (current <= 4) {
+
+        pages.push(2);
+        pages.push(3);
+        pages.push(4);
+        pages.push(5);
+
+        pages.push('dots');
+
+        pages.push(total);
+
+        return pages;
+
+    }
+
+
+    // ==================================================
+    // CURRENT DEKAT AKHIR
+    // ==================================================
+
+    if (current >= total - 3) {
+
+        pages.push('dots');
+
+        pages.push(total - 4);
+        pages.push(total - 3);
+        pages.push(total - 2);
+        pages.push(total - 1);
+        pages.push(total);
+
+        return pages;
+
+    }
+
+
+    // ==================================================
+    // CURRENT DI TENGAH
+    // ==================================================
+
+    pages.push('dots');
+
+    pages.push(current - 1);
+    pages.push(current);
+    pages.push(current + 1);
+
+    pages.push('dots');
+
+    pages.push(total);
+
+
+    return pages;
+
+}
+
+
+// ======================================================
+// RENDER DATA BUKU
+// ======================================================
+
+function renderBooks() {
+
+    const data =
+        getFilteredBooks();
+
+
+    const totalItems =
+        data.length;
+
+
+    const totalPages =
+        Math.ceil(
+            totalItems / ITEMS_PER_PAGE
+        );
+
+
+    // ==================================================
+    // CEK HALAMAN
+    // ==================================================
+
+    if (
+        totalPages > 0
+        &&
+        currentPage > totalPages
+    ) {
+
+        currentPage =
+            totalPages;
+
+    }
+
+
+    if (totalPages === 0) {
+
+        currentPage = 1;
+
+    }
+
+
+    // ==================================================
+    // DATA KOSONG
+    // ==================================================
+
+    if (!totalItems) {
+
+        body.innerHTML = `
 
             <tr>
 
-                <td colspan="10">
+                <td
+                    colspan="9"
+                    class="books-empty"
+                >
 
-                    <div class="bk-status">
+                    <div class="empty-content">
 
-                        <p>
-                            <b>
-                                ${
-                                    keyword
-                                    ? 'Buku tidak ditemukan.'
-                                    : 'Tidak ada data buku.'
-                                }
-                            </b>
-                        </p>
+                        <div class="empty-icon">
 
-                        <small>
-                            ${
-                                keyword
-                                ? 'Coba cari dengan kata kunci lain.'
-                                : 'Tambahkan buku pertama melalui tombol "Tambah Buku".'
-                            }
-                        </small>
+                            <i data-lucide="search-x"></i>
+
+                        </div>
+
+                        <strong>
+                            Data tidak ditemukan
+                        </strong>
+
+                        <span>
+                            Coba ubah kata pencarian atau filter.
+                        </span>
 
                     </div>
 
@@ -910,282 +2132,582 @@ function renderTabel(data) {
         `;
 
 
-        document.getElementById('bkCount').textContent =
-            keyword
-            ? `0 dari ${semuaBuku.length} buku`
-            : '0 buku';
+        paginationInfo.textContent =
+            'Tidak ada data buku';
+
+        paginationControls.innerHTML = '';
+
+        refreshIcons();
 
         return;
 
     }
 
 
-    tbody.innerHTML = '';
+    // ==================================================
+    // AMBIL DATA UNTUK HALAMAN AKTIF
+    // ==================================================
+
+    const startIndex =
+        (currentPage - 1)
+        *
+        ITEMS_PER_PAGE;
 
 
-    data.forEach((buku, index) => {
-
-        const tr = document.createElement('tr');
-
-        tr.style.animationDelay =
-            (index * 0.03) + 's';
+    const endIndex =
+        startIndex
+        +
+        ITEMS_PER_PAGE;
 
 
-        const jumlahStok =
-            buku.stok ?? 0;
+    const pageData =
+        data.slice(
+            startIndex,
+            endIndex
+        );
 
 
-        /* =================================================
-           BAGIAN COVER
-           ================================================= */
+    // ==================================================
+    // RENDER TABLE
+    // ==================================================
 
-        let coverHtml = `
-            <div class="bk-no-cover">
-                No Cover
-            </div>
-        `;
+    body.innerHTML =
+        pageData.map(book => {
 
+            return `
 
-        if (buku.cover && String(buku.cover).trim() !== '') {
+                <tr>
 
-            const namaCover =
-                String(buku.cover).trim();
+                    <td>
 
+                        <span class="book-id">
+                            #${escapeHtml(book.id)}
+                        </span>
 
-            let srcCover = '';
-
-
-            /*
-             * Kalau API menyimpan URL lengkap
-             */
-            if (/^https?:\/\//i.test(namaCover)) {
-
-                srcCover = namaCover;
-
-            }
-
-            /*
-             * Kalau nama file adalah default_cover.jpg
-             */
-            else if (namaCover === 'default_cover.jpg') {
-
-                srcCover =
-                    '/perpus_api/uploads/cover/default_cover.jpg';
-
-            }
-
-            /*
-             * Semua cover upload dari edit.php
-             * disimpan di uploads/cover/
-             */
-            else {
-
-                srcCover =
-                    '/perpus_api/uploads/cover/' +
-                    encodeURIComponent(namaCover);
-
-            }
+                    </td>
 
 
-            coverHtml = `
-                <img
-                    src="${escapeHtml(srcCover)}"
-                    alt="Cover ${escapeHtml(buku.judul)}"
-                    class="bk-cover-img"
-                    loading="lazy"
-                    onerror="this.onerror=null; this.outerHTML='<div class=&quot;bk-no-cover&quot;>Cover<br>tidak ditemukan</div>'"
-                >
+                    <td>
+
+                        ${createCover(book)}
+
+                    </td>
+
+
+                    <td>
+
+                        <span class="book-code">
+                            ${escapeHtml(book.kode_buku)}
+                        </span>
+
+                    </td>
+
+
+                    <td>
+
+                        <div class="book-title">
+
+                            ${escapeHtml(book.judul)}
+
+                        </div>
+
+                    </td>
+
+
+                    <td>
+
+                        ${escapeHtml(book.penulis)}
+
+                    </td>
+
+
+                    <td>
+
+                        <span class="category-badge">
+
+                            ${escapeHtml(book.kategori)}
+
+                        </span>
+
+                    </td>
+
+
+                    <td>
+
+                        <span class="book-year">
+
+                            ${escapeHtml(book.tahun_terbit)}
+
+                        </span>
+
+                    </td>
+
+
+                    <td>
+
+                        ${escapeHtml(book.penerbit)}
+
+                    </td>
+
+
+                    <td>
+
+                        <div class="book-actions">
+
+
+                            <a
+                                href="edit.php?id=${encodeURIComponent(book.id)}"
+                                class="book-action edit"
+                                title="Edit Buku"
+                            >
+
+                                <i data-lucide="pencil"></i>
+
+                            </a>
+
+
+                            <form
+                                method="post"
+                                action="hapus.php"
+                                onsubmit="return confirm('Apakah Anda yakin ingin menghapus buku ini?');"
+                            >
+
+                                <input
+                                    type="hidden"
+                                    name="id"
+                                    value="${escapeHtml(book.id)}"
+                                >
+
+
+                                <button
+                                    type="submit"
+                                    class="book-action delete"
+                                    title="Hapus Buku"
+                                >
+
+                                    <i data-lucide="trash-2"></i>
+
+                                </button>
+
+                            </form>
+
+
+                        </div>
+
+                    </td>
+
+                </tr>
+
             `;
 
-        }
+        })
+        .join('');
 
 
-        const stokClass =
-            Number(jumlahStok) > 0
-            ? 'bk-stok-ada'
-            : 'bk-stok-habis';
+    // ==================================================
+    // PAGINATION
+    // ==================================================
+
+    renderPagination(
+        totalItems
+    );
 
 
-        tr.innerHTML = `
+    refreshIcons();
 
-            <td>
-                <span class="bk-no">
-                    ${index + 1}
-                </span>
-            </td>
+}
 
 
-            <td>
-                ${coverHtml}
-            </td>
+// ======================================================
+// LOAD API
+// ======================================================
+
+async function loadBooks() {
+
+    statusBox.textContent =
+        'Mengambil data dari data_json.php...';
+
+    statusBox.className =
+        'books-status';
 
 
-            <td>
-                <span class="bk-kode">
-                    ${escapeHtml(buku.kode_buku)}
-                </span>
-            </td>
+    apiSummary.textContent =
+        'Memuat...';
 
 
-            <td class="bk-judul">
-                ${escapeHtml(buku.judul)}
-            </td>
+    body.innerHTML = `
 
+        <tr>
 
-            <td class="bk-penulis">
-                ${escapeHtml(buku.penulis)}
-            </td>
+            <td
+                colspan="9"
+                class="books-empty"
+            >
 
+                <div class="empty-content">
 
-            <td>
+                    <div class="empty-icon">
 
-                <span class="bk-kategori ${kategoriClass(buku.kategori)}">
+                        <i data-lucide="loader-circle"></i>
 
-                    ${escapeHtml(buku.kategori)}
+                    </div>
 
-                </span>
-
-            </td>
-
-
-            <td>
-
-                <span class="bk-tahun">
-
-                    ${escapeHtml(buku.tahun_terbit)}
-
-                </span>
-
-            </td>
-
-
-            <td>
-
-                ${escapeHtml(buku.penerbit)}
-
-            </td>
-
-
-            <td>
-
-                <span class="bk-stok ${stokClass}">
-
-                    ${escapeHtml(jumlahStok)}
-
-                </span>
-
-            </td>
-
-
-            <td>
-
-                <div class="bk-actions">
-
-                    <a
-                        href="edit.php?id=${encodeURIComponent(buku.id)}"
-                        class="bk-btn bk-btn-edit">
-
-                        ${ICON_EDIT}
-
-                        Edit
-
-                    </a>
-
-
-                    <a
-                        href="hapus.php?id=${encodeURIComponent(buku.id)}"
-                        class="bk-btn bk-btn-hapus"
-                        onclick="return confirm('Apakah Anda yakin ingin menghapus &quot;${escapeJsParam(buku.judul)}&quot;?')">
-
-                        ${ICON_TRASH}
-
-                        Hapus
-
-                    </a>
+                    <span>
+                        Mengambil data buku...
+                    </span>
 
                 </div>
 
             </td>
 
-        `;
+        </tr>
+
+    `;
 
 
-        tbody.appendChild(tr);
+    paginationInfo.textContent =
+        'Memuat data...';
 
-    });
-
-
-    const keyword =
-        document.getElementById('bkCari').value.trim();
+    paginationControls.innerHTML = '';
 
 
-    document.getElementById('bkCount').textContent =
-        keyword
-        ? `${data.length} dari ${semuaBuku.length} buku`
-        : `${semuaBuku.length} buku`;
-
-}
+    refreshIcons();
 
 
-/* =========================================================
-   PENCARIAN
-========================================================= */
+    try {
 
-document
-    .getElementById('bkCari')
-    .addEventListener('input', function () {
+        const response =
+            await fetch(
+                API_URL,
+                {
+                    cache: 'no-store'
+                }
+            );
 
-        const q =
-            this.value.trim().toLowerCase();
 
+        // ==================================================
+        // HTTP
+        // ==================================================
 
-        if (!q) {
+        if (!response.ok) {
 
-            renderTabel(semuaBuku);
-
-            return;
+            throw new Error(
+                'HTTP ' + response.status
+            );
 
         }
 
 
-        const hasilFilter =
-            semuaBuku.filter(buku => {
+        // ==================================================
+        // JSON
+        // ==================================================
 
-                const targetText = [
-
-                    buku.kode_buku,
-                    buku.judul,
-                    buku.penulis,
-                    buku.kategori,
-                    buku.tahun_terbit,
-                    buku.penerbit,
-                    buku.stok
-
-                ]
-                .join(' ')
-                .toLowerCase();
+        const result =
+            await response.json();
 
 
-                return targetText.includes(q);
+        // ==================================================
+        // VALIDASI
+        // ==================================================
 
-            });
+        if (
+            !result
+            ||
+            result.success !== true
+            ||
+            !Array.isArray(result.data)
+        ) {
+
+            throw new Error(
+                'Format API tidak valid'
+            );
+
+        }
 
 
-        renderTabel(hasilFilter);
+        // ==================================================
+        // DATA
+        // ==================================================
 
-    });
+        allBooks =
+            result.data;
 
 
-/* =========================================================
-   JALANKAN SAAT HALAMAN SELESAI
-========================================================= */
+        // Kembali ke halaman pertama
+        currentPage = 1;
 
-document.addEventListener(
-    "DOMContentLoaded",
-    loadBuku
+
+        // ==================================================
+        // KATEGORI
+        // ==================================================
+
+        const categories =
+            [
+                ...new Set(
+                    allBooks
+                        .map(book => book.kategori)
+                        .filter(category => category)
+                )
+            ]
+            .sort();
+
+
+        categoryFilter.innerHTML = `
+
+            <option value="">
+                Semua Kategori
+            </option>
+
+        `;
+
+
+        categories.forEach(category => {
+
+            const option =
+                document.createElement('option');
+
+            option.value =
+                category;
+
+            option.textContent =
+                category;
+
+            categoryFilter.appendChild(
+                option
+            );
+
+        });
+
+
+        // ==================================================
+        // SUMMARY
+        // ==================================================
+
+        totalBooks.textContent =
+            allBooks.length;
+
+        totalCategories.textContent =
+            categories.length;
+
+        apiSummary.textContent =
+            'Terhubung';
+
+
+        // ==================================================
+        // STATUS
+        // ==================================================
+
+        statusBox.textContent =
+            `API berhasil terhubung · ${allBooks.length} data buku`;
+
+        statusBox.className =
+            'books-status success';
+
+
+        // ==================================================
+        // RENDER
+        // ==================================================
+
+        renderBooks();
+
+
+    } catch (error) {
+
+        console.error(
+            'Error mengambil data API:',
+            error
+        );
+
+
+        totalBooks.textContent =
+            '-';
+
+        totalCategories.textContent =
+            '-';
+
+        apiSummary.textContent =
+            'Gagal';
+
+
+        statusBox.textContent =
+            'Gagal mengambil data API: '
+            +
+            error.message;
+
+        statusBox.className =
+            'books-status error';
+
+
+        body.innerHTML = `
+
+            <tr>
+
+                <td
+                    colspan="9"
+                    class="books-empty"
+                >
+
+                    <div class="empty-content">
+
+                        <div class="empty-icon">
+
+                            <i data-lucide="cloud-off"></i>
+
+                        </div>
+
+                        <strong>
+                            Data gagal dimuat
+                        </strong>
+
+                        <span>
+                            Periksa data_json.php dan koneksi database.
+                        </span>
+
+                    </div>
+
+                </td>
+
+            </tr>
+
+        `;
+
+
+        paginationInfo.textContent =
+            'Data tidak tersedia';
+
+        paginationControls.innerHTML = '';
+
+
+        refreshIcons();
+
+    }
+
+}
+
+
+// ======================================================
+// SEARCH
+// ======================================================
+
+searchInput.addEventListener(
+    'input',
+    function () {
+
+        currentPage = 1;
+
+        renderBooks();
+
+    }
 );
+
+
+// ======================================================
+// CATEGORY
+// ======================================================
+
+categoryFilter.addEventListener(
+    'change',
+    function () {
+
+        currentPage = 1;
+
+        renderBooks();
+
+    }
+);
+
+
+// ======================================================
+// YEAR SORT
+// ======================================================
+
+yearSort.addEventListener(
+    'change',
+    function () {
+
+        currentPage = 1;
+
+        renderBooks();
+
+    }
+);
+
+
+// ======================================================
+// REFRESH
+// ======================================================
+
+refreshBtn.addEventListener(
+    'click',
+    async function () {
+
+        const icon =
+            refreshBtn.querySelector('svg');
+
+
+        if (icon) {
+
+            icon.style.animation =
+                'spin .7s linear infinite';
+
+        }
+
+
+        await loadBooks();
+
+
+        const newIcon =
+            refreshBtn.querySelector('svg');
+
+
+        if (newIcon) {
+
+            newIcon.style.animation =
+                '';
+
+        }
+
+    }
+);
+
+
+// ======================================================
+// CSS SPIN
+// ======================================================
+
+const spinStyle =
+    document.createElement('style');
+
+spinStyle.textContent = `
+
+    @keyframes spin {
+
+        from {
+            transform: rotate(0deg);
+        }
+
+        to {
+            transform: rotate(360deg);
+        }
+
+    }
+
+`;
+
+document.head.appendChild(
+    spinStyle
+);
+
+
+// ======================================================
+// LOAD AWAL
+// ======================================================
+
+loadBooks();
 
 </script>
 
+
 </body>
+
 </html>

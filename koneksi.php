@@ -1,12 +1,21 @@
 <?php
-$host = "localhost";
-$user = "root";
-$pass = "";
-$db   = "perpus_api";
+$host = 'localhost';
+$db   = 'perpus_api';
+$user = 'root';
+$pass = '';
+$charset = 'utf8mb4';
 
-$koneksi = mysqli_connect($host, $user, $pass, $db);
+$dsn = "mysql:host={$host};dbname={$db};charset={$charset}";
 
-if (!$koneksi) {
-    die("Koneksi Database Gagal: " . mysqli_connect_error());
+$options = [
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    PDO::ATTR_EMULATE_PREPARES   => false,
+];
+
+try {
+    $pdo = new PDO($dsn, $user, $pass, $options);
+} catch (PDOException $e) {
+    die('Koneksi database gagal. Pastikan MySQL aktif dan database perpus_api sudah dibuat.');
 }
 ?>
